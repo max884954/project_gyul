@@ -1,0 +1,590 @@
+@tool
+extends Node3D
+
+const MAP_SIZE := Vector2i(34, 26)
+const ROOM_COUNT := 7
+const ROOM_PLACEMENT_ATTEMPTS := 120
+const ROOM_MIN_SIZE := Vector2i(3, 3)
+const ROOM_MAX_SIZE := Vector2i(8, 6)
+const MIN_ROOM_TILE_COUNT := 12
+const ROOM_PADDING := 1
+const INVALID_CELL := Vector2i(-9999, -9999)
+
+const TILE_SIZE := 1.0
+const TILE_STEP := 1.04
+const TILE_BORDER_WIDTH := 0.035
+const TILE_BORDER_HEIGHT := 0.018
+const GENERATED_ROOT_NAME := "GeneratedFloor"
+const CHARACTER_ROOT_NAME := "TestCharacter"
+const FLOOR_TEXTURE_PATH := "res://assets/art/tilesets/checker_floor.png"
+const CHARACTER_TEXTURE_PATH := "res://assets/art/characters/test_side_character_imagegen_trimmed.png"
+
+const CAMERA_TARGET := Vector3.ZERO
+const CAMERA_DISTANCE := 14.0
+const CAMERA_FIXED_PITCH := deg_to_rad(30.0)
+const CAMERA_VIEW_YAWS := [
+	deg_to_rad(45.0),
+	deg_to_rad(315.0),
+	deg_to_rad(225.0),
+	deg_to_rad(135.0),
+]
+const CAMERA_TURN_SPEED := 7.0
+const CAMERA_ZOOM_DRAG_SPEED := 0.025
+const CAMERA_ZOOM_WHEEL_STEP := 0.55
+const CAMERA_MIN_SIZE := 5.0
+const CAMERA_MAX_SIZE := 18.0
+
+const CHARACTER_WORLD_HEIGHT := TILE_SIZE * 2.2
+const CHARACTER_FLOOR_OFFSET := 0.01
+const CHARACTER_FACING_YAW := deg_to_rad(90.0)
+
+@onready var _start_button: Button = %StartButton
+@onready var _status_label: Label = %StatusLabel
+
+var _rng := RandomNumberGenerator.new()
+var _camera: Camera3D
+var _camera_view_index := 0
+var _camera_current_yaw := CAMERA_VIEW_YAWS[0]
+var _camera_target_yaw := CAMERA_VIEW_YAWS[0]
+var _map_center := Vector2.ZERO
+var _room_rects: Array[Rect2i] = []
+var _floor_cells: Dictionary = {}
+var _tiles: Dictionary = {}
+var _selected_start_cell := INVALID_CELL
+var _hovered_cell := INVALID_CELL
+var _game_started := false
+var _is_zoom_dragging := false
+
+var _floor_material: StandardMaterial3D
+var _focus_material: StandardMaterial3D
+var _start_material: StandardMaterial3D
+var _border_material: StandardMaterial3D
+var _character_material: StandardMaterial3D
+var _character_texture: Texture2D
+var _character_node: MeshInstance3D
+
+
+func _ready() -> void:
+	if Engine.is_editor_hint():
+		_rng.seed = 1205
+	else:
+		_rng.randomize()
+
+	_setup_ui()
+	_setup_camera()
+	_generate_dungeon()
+	_rebuild_floor()
+	set_process(true)
+
+
+func _setup_ui() -> void:
+	if _start_button != null:
+		_start_button.disabled = true
+		_start_button.pressed.connect(_start_game)
+
+	_update_status("시작 위치를 선택하세요.")
+
+
+func _setup_camera() -> void:
+	_camera = get_node_or_null("Camera3D") as Camera3D
+	if _camera == null:
+		return
+
+	_camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+	_camera.size = 13.0
+	_camera.current = true
+	_apply_camera_transform()
+
+
+func _process(delta: float) -> void:
+	_update_camera_motion(delta)
+	_update_hovered_tile()
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		_handle_mouse_button(event)
+	elif event is InputEventMouseMotion:
+		_handle_mouse_motion(event)
+	elif event is InputEventKey:
+		_handle_key(event)
+
+
+func _handle_mouse_button(event: InputEventMouseButton) -> void:
+	if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		_select_start_cell(_get_mouse_grid_cell())
+	elif event.button_index == MOUSE_BUTTON_MIDDLE:
+		_is_zoom_dragging = event.pressed
+	elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_UP:
+		_zoom_camera(-CAMERA_ZOOM_WHEEL_STEP)
+	elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+		_zoom_camera(CAMERA_ZOOM_WHEEL_STEP)
+
+
+func _handle_mouse_motion(event: InputEventMouseMotion) -> void:
+	if _is_zoom_dragging:
+		_zoom_camera(event.relative.y * CAMERA_ZOOM_DRAG_SPEED)
+
+
+func _handle_key(event: InputEventKey) -> void:
+	if not event.pressed or event.echo:
+		return
+
+	if event.keycode == KEY_E:
+		_rotate_camera_view(-1)
+	elif event.keycode == KEY_Q:
+		_rotate_camera_view(1)
+
+
+func _rotate_camera_view(direction: int) -> void:
+	_camera_view_index = wrapi(_camera_view_index + direction, 0, CAMERA_VIEW_YAWS.size())
+	_camera_target_yaw = CAMERA_VIEW_YAWS[_camera_view_index]
+
+
+func _update_camera_motion(delta: float) -> void:
+	var yaw_difference := wrapf(_camera_target_yaw - _camera_current_yaw, -PI, PI)
+	if absf(yaw_difference) <= 0.001:
+		_camera_current_yaw = _camera_target_yaw
+		return
+
+	var interpolation_weight := 1.0 - exp(-CAMERA_TURN_SPEED * delta)
+	_camera_current_yaw += yaw_difference * interpolation_weight
+	_apply_camera_transform()
+
+
+func _apply_camera_transform() -> void:
+	if _camera == null:
+		return
+
+	var horizontal_distance := cos(CAMERA_FIXED_PITCH) * CAMERA_DISTANCE
+	_camera.position = CAMERA_TARGET + Vector3(
+		sin(_camera_current_yaw) * horizontal_distance,
+		sin(CAMERA_FIXED_PITCH) * CAMERA_DISTANCE,
+		cos(_camera_current_yaw) * horizontal_distance
+	)
+	_camera.look_at(CAMERA_TARGET, Vector3.UP)
+
+
+func _zoom_camera(amount: float) -> void:
+	if _camera == null:
+		return
+
+	_camera.size = clampf(_camera.size + amount, CAMERA_MIN_SIZE, CAMERA_MAX_SIZE)
+	_update_hovered_tile()
+
+
+func _generate_dungeon() -> void:
+	_floor_cells.clear()
+	_room_rects.clear()
+	_selected_start_cell = INVALID_CELL
+	_game_started = false
+
+	for _room_index in ROOM_COUNT:
+		_try_place_room()
+
+	if _room_rects.is_empty():
+		_room_rects.append(Rect2i(Vector2i(2, 2), Vector2i(4, 4)))
+
+	_room_rects.sort_custom(_sort_rooms_by_position)
+	for room in _room_rects:
+		_carve_room(room)
+
+	for i in range(1, _room_rects.size()):
+		_carve_corridor(_room_center(_room_rects[i - 1]), _room_center(_room_rects[i]))
+
+	_update_map_center()
+
+
+func _try_place_room() -> void:
+	for _attempt in ROOM_PLACEMENT_ATTEMPTS:
+		var room_size := _random_room_size()
+		var max_x := MAP_SIZE.x - room_size.x - 2
+		var max_y := MAP_SIZE.y - room_size.y - 2
+		if max_x <= 1 or max_y <= 1:
+			return
+
+		var room := Rect2i(
+			Vector2i(_rng.randi_range(1, max_x), _rng.randi_range(1, max_y)),
+			room_size
+		)
+		if _can_place_room(room):
+			_room_rects.append(room)
+			return
+
+
+func _random_room_size() -> Vector2i:
+	for _attempt in 20:
+		var size := Vector2i(
+			_rng.randi_range(ROOM_MIN_SIZE.x, ROOM_MAX_SIZE.x),
+			_rng.randi_range(ROOM_MIN_SIZE.y, ROOM_MAX_SIZE.y)
+		)
+		if size.x * size.y >= MIN_ROOM_TILE_COUNT:
+			return size
+
+	return Vector2i(4, 3)
+
+
+func _can_place_room(room: Rect2i) -> bool:
+	for existing_room in _room_rects:
+		if _rooms_overlap(room, existing_room, ROOM_PADDING):
+			return false
+	return true
+
+
+func _rooms_overlap(a: Rect2i, b: Rect2i, padding: int) -> bool:
+	return (
+		a.position.x - padding < b.position.x + b.size.x + padding
+		and a.position.x + a.size.x + padding > b.position.x - padding
+		and a.position.y - padding < b.position.y + b.size.y + padding
+		and a.position.y + a.size.y + padding > b.position.y - padding
+	)
+
+
+func _sort_rooms_by_position(a: Rect2i, b: Rect2i) -> bool:
+	var a_center := _room_center(a)
+	var b_center := _room_center(b)
+	return a_center.x < b_center.x if a_center.x != b_center.x else a_center.y < b_center.y
+
+
+func _carve_room(room: Rect2i) -> void:
+	for y in range(room.position.y, room.position.y + room.size.y):
+		for x in range(room.position.x, room.position.x + room.size.x):
+			_floor_cells[Vector2i(x, y)] = true
+
+
+func _carve_corridor(from_cell: Vector2i, to_cell: Vector2i) -> void:
+	if _rng.randi_range(0, 1) == 0:
+		_carve_horizontal_corridor(from_cell.x, to_cell.x, from_cell.y)
+		_carve_vertical_corridor(from_cell.y, to_cell.y, to_cell.x)
+	else:
+		_carve_vertical_corridor(from_cell.y, to_cell.y, from_cell.x)
+		_carve_horizontal_corridor(from_cell.x, to_cell.x, to_cell.y)
+
+
+func _carve_horizontal_corridor(from_x: int, to_x: int, y: int) -> void:
+	for x in range(mini(from_x, to_x), maxi(from_x, to_x) + 1):
+		_floor_cells[Vector2i(x, y)] = true
+
+
+func _carve_vertical_corridor(from_y: int, to_y: int, x: int) -> void:
+	for y in range(mini(from_y, to_y), maxi(from_y, to_y) + 1):
+		_floor_cells[Vector2i(x, y)] = true
+
+
+func _room_center(room: Rect2i) -> Vector2i:
+	return room.position + Vector2i(room.size.x / 2, room.size.y / 2)
+
+
+func _update_map_center() -> void:
+	var min_cell := Vector2i(99999, 99999)
+	var max_cell := Vector2i(-99999, -99999)
+	for cell in _floor_cells.keys():
+		min_cell.x = mini(min_cell.x, cell.x)
+		min_cell.y = mini(min_cell.y, cell.y)
+		max_cell.x = maxi(max_cell.x, cell.x)
+		max_cell.y = maxi(max_cell.y, cell.y)
+
+	_map_center = Vector2(
+		(float(min_cell.x) + float(max_cell.x)) * 0.5,
+		(float(min_cell.y) + float(max_cell.y)) * 0.5
+	)
+
+
+func _rebuild_floor() -> void:
+	var previous := get_node_or_null(GENERATED_ROOT_NAME)
+	if previous != null:
+		remove_child(previous)
+		previous.free()
+
+	_remove_character()
+	_tiles.clear()
+	_hovered_cell = INVALID_CELL
+
+	var root := Node3D.new()
+	root.name = GENERATED_ROOT_NAME
+	add_child(root)
+
+	var floor_mesh := PlaneMesh.new()
+	floor_mesh.size = Vector2(TILE_SIZE, TILE_SIZE)
+
+	var horizontal_border_mesh := BoxMesh.new()
+	horizontal_border_mesh.size = Vector3(TILE_SIZE + TILE_BORDER_WIDTH, TILE_BORDER_HEIGHT, TILE_BORDER_WIDTH)
+
+	var vertical_border_mesh := BoxMesh.new()
+	vertical_border_mesh.size = Vector3(TILE_BORDER_WIDTH, TILE_BORDER_HEIGHT, TILE_SIZE + TILE_BORDER_WIDTH)
+
+	for cell in _floor_cells.keys():
+		var tile_position := _get_tile_position(cell)
+		var tile := MeshInstance3D.new()
+		tile.name = "Floor_%02d_%02d" % [cell.x, cell.y]
+		tile.mesh = floor_mesh
+		tile.material_override = _get_floor_material()
+		tile.position = tile_position
+		root.add_child(tile)
+		_add_tile_border(root, cell, tile_position, horizontal_border_mesh, vertical_border_mesh)
+		_tiles[cell] = tile
+
+
+func _select_start_cell(cell: Vector2i) -> void:
+	if _game_started or not _tiles.has(cell):
+		return
+
+	var previous_start := _selected_start_cell
+	_selected_start_cell = cell
+	_set_tile_focused(previous_start, false)
+	_set_tile_focused(_selected_start_cell, false)
+	_place_character(cell)
+
+	if _start_button != null:
+		_start_button.disabled = false
+	_update_status("시작 위치: (%d, %d)" % [cell.x, cell.y])
+
+
+func _start_game() -> void:
+	if _selected_start_cell == INVALID_CELL:
+		return
+
+	_game_started = true
+	if _start_button != null:
+		_start_button.disabled = true
+		_start_button.text = "게임 시작됨"
+	_update_status("게임 시작됨 - 시작 위치 (%d, %d)" % [_selected_start_cell.x, _selected_start_cell.y])
+
+
+func _place_character(cell: Vector2i) -> void:
+	_remove_character()
+
+	var root := Node3D.new()
+	root.name = CHARACTER_ROOT_NAME
+	root.position = _get_tile_position(cell)
+	root.rotation = Vector3(0.0, CHARACTER_FACING_YAW, 0.0)
+	add_child(root)
+
+	var mesh := QuadMesh.new()
+	var character_size := _get_character_quad_size()
+	mesh.size = character_size
+
+	_character_node = MeshInstance3D.new()
+	_character_node.name = "Sprite"
+	_character_node.mesh = mesh
+	_character_node.material_override = _get_character_material()
+	_character_node.position = Vector3(0.0, character_size.y * 0.5 + CHARACTER_FLOOR_OFFSET, 0.0)
+	_character_node.rotation = Vector3.ZERO
+	root.add_child(_character_node)
+
+
+func _remove_character() -> void:
+	var previous := get_node_or_null(CHARACTER_ROOT_NAME)
+	if previous != null:
+		remove_child(previous)
+		previous.free()
+	_character_node = null
+
+
+func _update_status(message: String) -> void:
+	if _status_label != null:
+		_status_label.text = message
+
+
+func _get_floor_material() -> StandardMaterial3D:
+	if _floor_material != null:
+		return _floor_material
+
+	_floor_material = StandardMaterial3D.new()
+	_floor_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_floor_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_floor_material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	_floor_material.albedo_color = Color.WHITE
+	_floor_material.albedo_texture = _load_floor_texture()
+	return _floor_material
+
+
+func _get_focus_material() -> StandardMaterial3D:
+	if _focus_material != null:
+		return _focus_material
+
+	_focus_material = StandardMaterial3D.new()
+	_focus_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_focus_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_focus_material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	_focus_material.albedo_color = Color(1.0, 0.86, 0.32, 1.0)
+	_focus_material.albedo_texture = _load_floor_texture()
+	return _focus_material
+
+
+func _get_start_material() -> StandardMaterial3D:
+	if _start_material != null:
+		return _start_material
+
+	_start_material = StandardMaterial3D.new()
+	_start_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_start_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_start_material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	_start_material.albedo_color = Color(0.35, 1.0, 0.55, 1.0)
+	_start_material.albedo_texture = _load_floor_texture()
+	return _start_material
+
+
+func _get_border_material() -> StandardMaterial3D:
+	if _border_material != null:
+		return _border_material
+
+	_border_material = StandardMaterial3D.new()
+	_border_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_border_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_border_material.albedo_color = Color(0.45, 0.45, 0.45, 1.0)
+	return _border_material
+
+
+func _get_character_material() -> StandardMaterial3D:
+	if _character_material != null:
+		return _character_material
+
+	_character_material = StandardMaterial3D.new()
+	_character_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_character_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_character_material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	_character_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_character_material.albedo_color = Color.WHITE
+	_character_material.albedo_texture = _get_character_texture()
+	return _character_material
+
+
+func _get_character_texture() -> Texture2D:
+	if _character_texture == null:
+		_character_texture = _load_texture(CHARACTER_TEXTURE_PATH)
+	return _character_texture
+
+
+func _get_character_quad_size() -> Vector2:
+	var texture := _get_character_texture()
+	if texture == null or texture.get_height() <= 0:
+		return Vector2(CHARACTER_WORLD_HEIGHT * 0.5, CHARACTER_WORLD_HEIGHT)
+
+	var aspect_ratio := float(texture.get_width()) / float(texture.get_height())
+	return Vector2(CHARACTER_WORLD_HEIGHT * aspect_ratio, CHARACTER_WORLD_HEIGHT)
+
+
+func _load_floor_texture() -> Texture2D:
+	return _load_texture(FLOOR_TEXTURE_PATH)
+
+
+func _load_texture(path: String) -> Texture2D:
+	if FileAccess.file_exists("%s.import" % path):
+		var imported_texture := load(path) as Texture2D
+		if imported_texture != null:
+			return imported_texture
+
+	var image := Image.new()
+	if image.load(path) != OK:
+		return null
+
+	return ImageTexture.create_from_image(image)
+
+
+func _update_hovered_tile() -> void:
+	var hovered_cell := _get_mouse_grid_cell()
+	if hovered_cell == _hovered_cell:
+		return
+
+	_set_tile_focused(_hovered_cell, false)
+	_hovered_cell = hovered_cell
+	_set_tile_focused(_hovered_cell, true)
+
+
+func _get_mouse_grid_cell() -> Vector2i:
+	if _camera == null:
+		return INVALID_CELL
+
+	var mouse_position := get_viewport().get_mouse_position()
+	var ray_origin := _camera.project_ray_origin(mouse_position)
+	var ray_direction := _camera.project_ray_normal(mouse_position)
+	if absf(ray_direction.y) < 0.0001:
+		return INVALID_CELL
+
+	var distance_to_floor := -ray_origin.y / ray_direction.y
+	if distance_to_floor < 0.0:
+		return INVALID_CELL
+
+	var hit_position := ray_origin + ray_direction * distance_to_floor
+	var x := int(round(hit_position.x / TILE_STEP + _map_center.x))
+	var y := int(round(hit_position.z / TILE_STEP + _map_center.y))
+	var cell := Vector2i(x, y)
+	if not _tiles.has(cell):
+		return INVALID_CELL
+
+	var tile_position := _get_tile_position(cell)
+	if absf(hit_position.x - tile_position.x) > TILE_SIZE * 0.5:
+		return INVALID_CELL
+	if absf(hit_position.z - tile_position.z) > TILE_SIZE * 0.5:
+		return INVALID_CELL
+
+	return cell
+
+
+func _set_tile_focused(cell: Vector2i, focused: bool) -> void:
+	var tile := _tiles.get(cell) as MeshInstance3D
+	if tile == null:
+		return
+
+	if cell == _selected_start_cell:
+		tile.material_override = _get_start_material()
+		tile.position = _get_tile_position(cell) + Vector3.UP * 0.06
+	elif focused:
+		tile.material_override = _get_focus_material()
+		tile.position = _get_tile_position(cell) + Vector3.UP * 0.04
+	else:
+		tile.material_override = _get_floor_material()
+		tile.position = _get_tile_position(cell)
+	tile.scale = Vector3.ONE
+
+
+func _get_tile_position(cell: Vector2i) -> Vector3:
+	return Vector3(
+		(float(cell.x) - _map_center.x) * TILE_STEP,
+		0.0,
+		(float(cell.y) - _map_center.y) * TILE_STEP
+	)
+
+
+func _add_tile_border(
+	root: Node3D,
+	cell: Vector2i,
+	tile_position: Vector3,
+	horizontal_mesh: BoxMesh,
+	vertical_mesh: BoxMesh
+) -> void:
+	var y_position := TILE_BORDER_HEIGHT * 0.5 + 0.006
+	_add_border_piece(
+		root,
+		"Border_N_%02d_%02d" % [cell.x, cell.y],
+		horizontal_mesh,
+		tile_position + Vector3(0.0, y_position, -TILE_SIZE * 0.5)
+	)
+	_add_border_piece(
+		root,
+		"Border_S_%02d_%02d" % [cell.x, cell.y],
+		horizontal_mesh,
+		tile_position + Vector3(0.0, y_position, TILE_SIZE * 0.5)
+	)
+	_add_border_piece(
+		root,
+		"Border_W_%02d_%02d" % [cell.x, cell.y],
+		vertical_mesh,
+		tile_position + Vector3(-TILE_SIZE * 0.5, y_position, 0.0)
+	)
+	_add_border_piece(
+		root,
+		"Border_E_%02d_%02d" % [cell.x, cell.y],
+		vertical_mesh,
+		tile_position + Vector3(TILE_SIZE * 0.5, y_position, 0.0)
+	)
+
+
+func _add_border_piece(root: Node3D, piece_name: String, mesh: BoxMesh, position: Vector3) -> void:
+	var border := MeshInstance3D.new()
+	border.name = piece_name
+	border.mesh = mesh
+	border.material_override = _get_border_material()
+	border.position = position
+	root.add_child(border)

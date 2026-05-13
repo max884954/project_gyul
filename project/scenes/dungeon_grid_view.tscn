@@ -1,0 +1,52 @@
+[gd_scene load_steps=3 format=3 uid="uid://c5ieypjh7bmpj"]
+
+[ext_resource type="Script" uid="uid://7irud7chmttk" path="res://scripts/dungeon_grid_view.gd" id="1_dungeon_grid"]
+
+[sub_resource type="Environment" id="Environment_qv7yl"]
+background_mode = 1
+background_color = Color(0.08, 0.08, 0.08, 1)
+ambient_light_source = 2
+ambient_light_color = Color(1, 1, 1, 1)
+ambient_light_energy = 0.8
+
+[node name="DungeonGridView" type="Node3D"]
+script = ExtResource("1_dungeon_grid")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+projection = 1
+current = true
+size = 8.0
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_qv7yl")
+
+[node name="CanvasLayer" type="CanvasLayer" parent="."]
+
+[node name="TopBar" type="PanelContainer" parent="CanvasLayer"]
+offset_left = 24.0
+offset_top = 24.0
+offset_right = 424.0
+offset_bottom = 116.0
+
+[node name="MarginContainer" type="MarginContainer" parent="CanvasLayer/TopBar"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 12
+
+[node name="VBoxContainer" type="VBoxContainer" parent="CanvasLayer/TopBar/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="StatusLabel" type="Label" parent="CanvasLayer/TopBar/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "시작 위치를 선택하세요."
+
+[node name="StartButton" type="Button" parent="CanvasLayer/TopBar/MarginContainer/VBoxContainer"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(180, 40)
+layout_mode = 2
+disabled = true
+text = "게임 시작"
