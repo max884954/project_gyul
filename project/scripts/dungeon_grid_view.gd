@@ -3,6 +3,8 @@ extends Node3D
 
 const CardDungeonState := preload("res://scripts/dungeon/card_dungeon_state.gd")
 const DungeonCardDatabase := preload("res://scripts/cards/card_database.gd")
+const DungeonSaveRuntime := preload("res://scripts/system/dungeon_save_runtime.gd")
+const DungeonTutorialFlow := preload("res://scripts/tutorial/dungeon_tutorial_flow.gd")
 
 const MAP_SIZE := Vector2i(34, 26)
 const ROOM_COUNT := 7
@@ -70,11 +72,16 @@ var _character_node: MeshInstance3D
 var _ally_token_material: StandardMaterial3D
 var _enemy_token_material: StandardMaterial3D
 var _card_state := CardDungeonState.new()
+var _save_runtime := DungeonSaveRuntime.new()
+var _tutorial := DungeonTutorialFlow.new()
 var _selected_hand_index := -1
 var _deck_label: Label
 var _card_help_label: Label
 var _run_action_container: HBoxContainer
 var _hand_container: HBoxContainer
+var _save_button: Button
+var _load_button: Button
+var _tutorial_button: Button
 var _end_turn_button: Button
 var _log_view: RichTextLabel
 
@@ -371,6 +378,7 @@ func _start_game() -> void:
 		_start_button.disabled = true
 		_start_button.text = "게임 시작됨"
 	_update_status("카드 기반 탐험 시작 - 이동/수색 카드를 선택하세요.")
+	_tutorial.advance_on_event("start_selected")
 	_place_character(_card_state.get_leader_cell())
 	_sync_unit_tokens()
 	_refresh_card_ui()
@@ -647,6 +655,22 @@ func _build_card_ui() -> void:
 	bottom.add_theme_constant_override("separation", 10)
 	root.add_child(bottom)
 
+	_save_button = Button.new()
+	_save_button.text = "저장"
+	_save_button.disabled = true
+	_save_button.pressed.connect(_on_save_pressed)
+	bottom.add_child(_save_button)
+
+	_load_button = Button.new()
+	_load_button.text = "불러오기"
+	_load_button.pressed.connect(_on_load_pressed)
+	bottom.add_child(_load_button)
+
+	_tutorial_button = Button.new()
+	_tutorial_button.text = "가이드"
+	_tutorial_button.pressed.connect(_on_tutorial_pressed)
+	bottom.add_child(_tutorial_button)
+
 	_end_turn_button = Button.new()
 	_end_turn_button.text = "턴 종료"
 	_end_turn_button.disabled = true
@@ -673,7 +697,11 @@ func _refresh_card_ui() -> void:
 
 	if not _game_started:
 		_deck_label.text = "카드 덱: 게임 시작 후 표시"
-		_card_help_label.text = "시작 위치를 선택하고 게임 시작을 누르면 이동/수색 카드가 손패에 들어옵니다."
+		_card_help_label.text = _tutorial.get_current_text()
+		if _save_button != null:
+			_save_button.disabled = true
+		if _load_button != null:
+			_load_button.disabled = not _save_runtime.has_save()
 		if _end_turn_button != null:
 			_end_turn_button.disabled = true
 		return
@@ -686,6 +714,8 @@ func _refresh_card_ui() -> void:
 	]
 	_deck_label.text = "%s | %s" % [_card_state.get_summary_text(), _card_state.get_run_action_text().replace("\n", " / ")]
 	_card_help_label.text = _card_state.get_run_action_text() if run_action_locked else "카드를 고른 뒤 던전 타일을 클릭하세요. 이동, 탐색, 교전 모두 카드로만 진행됩니다."
+	if _tutorial.enabled:
+		_card_help_label.text = "%s\n%s" % [_tutorial.get_current_text(), _card_help_label.text]
 	if _selected_hand_index >= 0 and _selected_hand_index < _card_state.deck.hand.size():
 		var selected_card := _card_state.deck.hand[_selected_hand_index]
 		_card_help_label.text = "%s 대상 선택 중: %s" % [selected_card["name"], selected_card["description"]]
@@ -708,6 +738,12 @@ func _refresh_card_ui() -> void:
 
 	if _end_turn_button != null:
 		_end_turn_button.disabled = run_action_locked
+	if _save_button != null:
+		_save_button.disabled = false
+	if _load_button != null:
+		_load_button.disabled = not _save_runtime.has_save()
+	if _tutorial_button != null:
+		_tutorial_button.text = "가이드 끄기" if _tutorial.enabled else "가이드 켜기"
 	if _log_view != null:
 		_log_view.text = "\n".join(_card_state.event_log.slice(maxi(0, _card_state.event_log.size() - 5), _card_state.event_log.size()))
 
@@ -746,8 +782,43 @@ func _add_run_action_button(label: String, callback: Callable, disabled: bool = 
 	_run_action_container.add_child(button)
 
 
+func _on_save_pressed() -> void:
+	if not _game_started:
+		return
+	if _save_runtime.save_state(_card_state):
+		_update_status("던전 런을 저장했습니다.")
+	else:
+		_update_status("던전 런 저장에 실패했습니다.")
+	_refresh_card_ui()
+
+
+func _on_load_pressed() -> void:
+	if not _save_runtime.load_state(_card_state):
+		_update_status("불러올 던전 런이 없습니다.")
+		return
+	_game_started = true
+	_selected_hand_index = -1
+	_selected_start_cell = _card_state.get_leader_cell()
+	if _start_button != null:
+		_start_button.disabled = true
+		_start_button.text = "게임 시작됨"
+	_place_character(_card_state.get_leader_cell())
+	_sync_unit_tokens()
+	_refresh_revealed_tiles()
+	_update_status("저장된 던전 런을 불러왔습니다.")
+	_refresh_card_ui()
+
+
+func _on_tutorial_pressed() -> void:
+	_tutorial.toggle_enabled()
+	_refresh_card_ui()
+
+
 func _on_reward_button_pressed(option_index: int) -> void:
 	_card_state.choose_reward(option_index)
+	_tutorial.advance_on_event("reward_chosen")
+	if _card_state.run_complete:
+		_tutorial.advance_on_event("run_completed")
 	_after_run_action()
 
 
@@ -802,6 +873,7 @@ func _on_card_button_pressed(hand_index: int) -> void:
 	var card := _card_state.deck.hand[hand_index]
 	if String(card.get("target_mode", "")) == DungeonCardDatabase.TARGET_SELF:
 		_card_state.use_card(hand_index, _card_state.party_cell)
+		_tutorial.advance_on_event("card_played")
 		_selected_hand_index = -1
 	else:
 		_selected_hand_index = hand_index
@@ -818,6 +890,7 @@ func _use_selected_card_on_cell(cell: Vector2i) -> void:
 
 	var did_play := _card_state.use_card(_selected_hand_index, cell)
 	if did_play:
+		_tutorial.advance_on_event("card_played")
 		_selected_hand_index = -1
 		_selected_start_cell = _card_state.get_leader_cell()
 		_place_character(_card_state.get_leader_cell())
@@ -833,6 +906,7 @@ func _on_end_turn_pressed() -> void:
 
 	_selected_hand_index = -1
 	_card_state.end_turn()
+	_tutorial.advance_on_event("turn_ended")
 	_place_character(_card_state.get_leader_cell())
 	_sync_unit_tokens()
 	_update_status(_card_state.get_summary_text())

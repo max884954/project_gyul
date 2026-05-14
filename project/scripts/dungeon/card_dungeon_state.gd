@@ -402,6 +402,144 @@ func get_deck_type_counts() -> Dictionary:
 	return result
 
 
+func to_save_dict() -> Dictionary:
+	return {
+		"version": 1,
+		"seed": _seed,
+		"floor_cells": _serialize_cells(floor_cells.keys()),
+		"party_cell": _cell_to_dict(party_cell),
+		"turn_number": turn_number,
+		"block": block,
+		"shield": shield,
+		"hidden_points": _serialize_point_map(hidden_points),
+		"revealed_points": _serialize_point_map(revealed_points),
+		"party_units": _serialize_units(party_units),
+		"enemies": _serialize_units(enemies),
+		"encounter_active": encounter_active,
+		"run_state": run_state,
+		"current_zone_type": current_zone_type,
+		"floor_number": floor_number,
+		"zone_index": zone_index,
+		"gold": gold,
+		"earned_lp": earned_lp,
+		"reward_options": reward_options.duplicate(true),
+		"completed_zones": completed_zones.duplicate(),
+		"run_complete": run_complete,
+		"deck": {
+			"draw_pile": deck.draw_pile.duplicate(true),
+			"hand": deck.hand.duplicate(true),
+			"discard_pile": deck.discard_pile.duplicate(true),
+			"event_log": deck.event_log.duplicate(),
+		},
+		"event_log": event_log.duplicate(),
+	}
+
+
+func apply_save_dict(data: Dictionary) -> void:
+	_seed = int(data.get("seed", 1205))
+	_rng.seed = _seed
+	floor_cells.clear()
+	for cell_data in data.get("floor_cells", []):
+		floor_cells[_dict_to_cell(cell_data)] = true
+	party_cell = _dict_to_cell(data.get("party_cell", _cell_to_dict(Vector2i.ZERO)))
+	turn_number = int(data.get("turn_number", 0))
+	block = int(data.get("block", 0))
+	shield = int(data.get("shield", 0))
+	hidden_points = _deserialize_point_map(data.get("hidden_points", []))
+	revealed_points = _deserialize_point_map(data.get("revealed_points", []))
+	party_units = _deserialize_units(data.get("party_units", []))
+	enemies = _deserialize_units(data.get("enemies", []))
+	encounter_active = bool(data.get("encounter_active", false))
+	run_state = String(data.get("run_state", RUN_STATE_EXPLORE))
+	current_zone_type = String(data.get("current_zone_type", ZONE_COMBAT))
+	floor_number = int(data.get("floor_number", 1))
+	zone_index = int(data.get("zone_index", 0))
+	gold = int(data.get("gold", 0))
+	earned_lp = int(data.get("earned_lp", 0))
+	reward_options = _duplicate_dictionary_array(data.get("reward_options", []))
+	completed_zones.clear()
+	for zone in data.get("completed_zones", []):
+		completed_zones.append(String(zone))
+	run_complete = bool(data.get("run_complete", false))
+
+	var deck_data: Dictionary = data.get("deck", {})
+	deck.draw_pile = _duplicate_dictionary_array(deck_data.get("draw_pile", []))
+	deck.hand = _duplicate_dictionary_array(deck_data.get("hand", []))
+	deck.discard_pile = _duplicate_dictionary_array(deck_data.get("discard_pile", []))
+	deck.event_log.clear()
+	for message in deck_data.get("event_log", []):
+		deck.event_log.append(String(message))
+	event_log.clear()
+	for message in data.get("event_log", []):
+		event_log.append(String(message))
+
+
+func _serialize_cells(cells: Array) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for cell in cells:
+		result.append(_cell_to_dict(cell))
+	return result
+
+
+func _serialize_point_map(points: Dictionary) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for cell in points.keys():
+		result.append({
+			"cell": _cell_to_dict(cell),
+			"value": String(points[cell]),
+		})
+	return result
+
+
+func _deserialize_point_map(items: Array) -> Dictionary:
+	var result: Dictionary = {}
+	for item in items:
+		var entry: Dictionary = item
+		result[_dict_to_cell(entry.get("cell", {}))] = String(entry.get("value", ""))
+	return result
+
+
+func _serialize_units(units: Array[Dictionary]) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for unit in units:
+		var copy := unit.duplicate(true)
+		copy["cell"] = _cell_to_dict(unit["cell"])
+		result.append(copy)
+	return result
+
+
+func _deserialize_units(items: Array) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for item in items:
+		var unit: Dictionary = (item as Dictionary).duplicate(true)
+		unit["cell"] = _dict_to_cell(unit.get("cell", {}))
+		if not unit.has("statuses"):
+			unit["statuses"] = {}
+		result.append(unit)
+	return result
+
+
+func _duplicate_dictionary_array(items: Array) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for item in items:
+		result.append((item as Dictionary).duplicate(true))
+	return result
+
+
+func _cell_to_dict(cell: Vector2i) -> Dictionary:
+	return {
+		"x": cell.x,
+		"y": cell.y,
+	}
+
+
+func _dict_to_cell(data: Variant) -> Vector2i:
+	if typeof(data) != TYPE_DICTIONARY:
+		return Vector2i.ZERO
+	var cell_data: Dictionary = data
+	return Vector2i(int(cell_data.get("x", 0)), int(cell_data.get("y", 0)))
+
+
 func _move_party(card: Dictionary, target_cell: Vector2i) -> void:
 	var before := party_cell
 	party_cell = target_cell
