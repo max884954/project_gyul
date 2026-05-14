@@ -3,6 +3,7 @@ extends RefCounted
 
 const DungeonCardDatabase := preload("res://scripts/cards/card_database.gd")
 const DungeonDeckRuntime := preload("res://scripts/cards/deck_runtime.gd")
+const DungeonEnemyCatalog := preload("res://scripts/dungeon/enemy_catalog.gd")
 
 const PHASE_EXPLORE := 0
 const PHASE_ENCOUNTER := 1
@@ -47,6 +48,7 @@ var current_zone_type := ZONE_COMBAT
 var floor_number := 1
 var zone_index := 0
 var gold := 0
+var earned_lp := 0
 var reward_options: Array[Dictionary] = []
 var completed_zones: Array[String] = []
 var run_complete := false
@@ -70,6 +72,7 @@ func setup(cells: Array[Vector2i], start_cell: Vector2i, seed: int = 1205, phase
 	floor_number = 1
 	zone_index = 0
 	gold = 0
+	earned_lp = 0
 	reward_options.clear()
 	completed_zones.clear()
 	run_complete = false
@@ -288,9 +291,10 @@ func choose_reward(option_index: int) -> bool:
 	reward_options.clear()
 	if current_zone_type == ZONE_BOSS:
 		completed_zones.append(current_zone_type)
+		earned_lp += _calculate_run_lp()
 		run_complete = true
 		run_state = RUN_STATE_COMPLETE
-		_log("보스를 쓰러뜨리고 던전 런을 완료했습니다.")
+		_log("보스를 쓰러뜨리고 던전 런을 완료했습니다. LP +%d." % earned_lp)
 	else:
 		completed_zones.append(current_zone_type)
 		_advance_zone()
@@ -376,6 +380,26 @@ func leave_shop() -> bool:
 	_log("상점을 떠납니다.")
 	_complete_utility_zone()
 	return true
+
+
+func get_run_result() -> Dictionary:
+	return {
+		"floor_number": floor_number,
+		"zone_index": zone_index,
+		"gold": gold,
+		"earned_lp": earned_lp,
+		"completed_zones": completed_zones.duplicate(),
+		"run_complete": run_complete,
+		"deck_total": deck.get_total_count(),
+	}
+
+
+func get_deck_type_counts() -> Dictionary:
+	var result: Dictionary = {}
+	for card in deck.get_all_cards():
+		var card_type := String(card.get("type", "unknown"))
+		result[card_type] = int(result.get(card_type, 0)) + 1
+	return result
 
 
 func _move_party(card: Dictionary, target_cell: Vector2i) -> void:
@@ -509,12 +533,21 @@ func _spawn_test_encounter(zone_type: String = ZONE_COMBAT) -> void:
 	reward_options.clear()
 	enemies.clear()
 	var enemy_origin := _farthest_floor_cell(party_cell)
-	if zone_type == ZONE_BOSS:
-		enemies.append(_make_unit("boss_knight", "문지기 기사", "enemy", "", enemy_origin, 46, 9, 1))
-		enemies.append(_make_unit("boss_orb", "저주 보주", "enemy", "", _nearest_floor_cell(enemy_origin + Vector2i(0, 1)), 24, 7, 4))
-	else:
-		enemies.append(_make_unit("skeleton", "해골 병사", "enemy", "", enemy_origin, 22, 6, 1))
-		enemies.append(_make_unit("wraith", "망령", "enemy", "", _nearest_floor_cell(enemy_origin + Vector2i(0, 1)), 16, 5, 4))
+	var specs := DungeonEnemyCatalog.build_encounter(zone_type, floor_number, zone_index, _seed)
+	var offsets := [Vector2i.ZERO, Vector2i(0, 1), Vector2i(1, 0), Vector2i(-1, 0)]
+	for i in range(specs.size()):
+		var spec := specs[i]
+		var cell := _nearest_floor_cell(enemy_origin + offsets[i % offsets.size()])
+		enemies.append(_make_unit(
+			String(spec.get("id", "enemy")),
+			String(spec.get("name", "적")),
+			"enemy",
+			"",
+			cell,
+			int(spec.get("max_hp", 20)),
+			int(spec.get("attack", 5)),
+			int(spec.get("range", 1))
+		))
 	_plan_enemy_intents()
 	_log("%s 조우 발생: 현재 던전 격자에서 교전 UI를 엽니다." % _get_zone_label(zone_type))
 
@@ -594,6 +627,12 @@ func _reveal_hidden_points(count: int) -> int:
 		revealed_points[cell] = hidden_points[cell]
 		revealed += 1
 	return revealed
+
+
+func _calculate_run_lp() -> int:
+	var zone_lp := completed_zones.size() * 2
+	var deck_lp := maxi(0, deck.get_total_count() - 40)
+	return 10 + zone_lp + deck_lp
 
 
 func _get_run_state_label() -> String:
