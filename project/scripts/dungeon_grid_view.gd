@@ -1,6 +1,9 @@
 @tool
 extends Node3D
 
+const CardDungeonState := preload("res://scripts/dungeon/card_dungeon_state.gd")
+const DungeonCardDatabase := preload("res://scripts/cards/card_database.gd")
+
 const MAP_SIZE := Vector2i(34, 26)
 const ROOM_COUNT := 7
 const ROOM_PLACEMENT_ATTEMPTS := 120
@@ -58,10 +61,18 @@ var _is_zoom_dragging := false
 var _floor_material: StandardMaterial3D
 var _focus_material: StandardMaterial3D
 var _start_material: StandardMaterial3D
+var _revealed_material: StandardMaterial3D
 var _border_material: StandardMaterial3D
 var _character_material: StandardMaterial3D
 var _character_texture: Texture2D
 var _character_node: MeshInstance3D
+var _card_state := CardDungeonState.new()
+var _selected_hand_index := -1
+var _deck_label: Label
+var _card_help_label: Label
+var _hand_container: HBoxContainer
+var _end_turn_button: Button
+var _log_view: RichTextLabel
 
 
 func _ready() -> void:
@@ -83,6 +94,7 @@ func _setup_ui() -> void:
 		_start_button.pressed.connect(_start_game)
 
 	_update_status("시작 위치를 선택하세요.")
+	_build_card_ui()
 
 
 func _setup_camera() -> void:
@@ -112,7 +124,11 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _handle_mouse_button(event: InputEventMouseButton) -> void:
 	if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
-		_select_start_cell(_get_mouse_grid_cell())
+		var cell := _get_mouse_grid_cell()
+		if _game_started:
+			_use_selected_card_on_cell(cell)
+		else:
+			_select_start_cell(cell)
 	elif event.button_index == MOUSE_BUTTON_MIDDLE:
 		_is_zoom_dragging = event.pressed
 	elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_UP:
@@ -345,10 +361,13 @@ func _start_game() -> void:
 		return
 
 	_game_started = true
+	_selected_hand_index = -1
+	_card_state.setup(_get_floor_cells_array(), _selected_start_cell, 1205)
 	if _start_button != null:
 		_start_button.disabled = true
 		_start_button.text = "게임 시작됨"
-	_update_status("게임 시작됨 - 시작 위치 (%d, %d)" % [_selected_start_cell.x, _selected_start_cell.y])
+	_update_status("카드 기반 탐험 시작 - 이동/수색 카드를 선택하세요.")
+	_refresh_card_ui()
 
 
 func _place_character(cell: Vector2i) -> void:
@@ -423,6 +442,19 @@ func _get_start_material() -> StandardMaterial3D:
 	_start_material.albedo_color = Color(0.35, 1.0, 0.55, 1.0)
 	_start_material.albedo_texture = _load_floor_texture()
 	return _start_material
+
+
+func _get_revealed_material() -> StandardMaterial3D:
+	if _revealed_material != null:
+		return _revealed_material
+
+	_revealed_material = StandardMaterial3D.new()
+	_revealed_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_revealed_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_revealed_material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	_revealed_material.albedo_color = Color(0.35, 0.62, 1.0, 1.0)
+	_revealed_material.albedo_texture = _load_floor_texture()
+	return _revealed_material
 
 
 func _get_border_material() -> StandardMaterial3D:
@@ -533,10 +565,163 @@ func _set_tile_focused(cell: Vector2i, focused: bool) -> void:
 	elif focused:
 		tile.material_override = _get_focus_material()
 		tile.position = _get_tile_position(cell) + Vector3.UP * 0.04
+	elif _game_started and _card_state.revealed_points.has(cell):
+		tile.material_override = _get_revealed_material()
+		tile.position = _get_tile_position(cell) + Vector3.UP * 0.02
 	else:
 		tile.material_override = _get_floor_material()
 		tile.position = _get_tile_position(cell)
 	tile.scale = Vector3.ONE
+
+
+func _build_card_ui() -> void:
+	var canvas := get_node_or_null("CanvasLayer") as CanvasLayer
+	if canvas == null or Engine.is_editor_hint():
+		return
+
+	var panel := PanelContainer.new()
+	panel.name = "CardPanel"
+	panel.anchor_left = 0.0
+	panel.anchor_top = 1.0
+	panel.anchor_right = 1.0
+	panel.anchor_bottom = 1.0
+	panel.offset_left = 24.0
+	panel.offset_top = -230.0
+	panel.offset_right = -24.0
+	panel.offset_bottom = -24.0
+	canvas.add_child(panel)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 14)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_right", 14)
+	margin.add_theme_constant_override("margin_bottom", 10)
+	panel.add_child(margin)
+
+	var root := VBoxContainer.new()
+	root.add_theme_constant_override("separation", 8)
+	margin.add_child(root)
+
+	_deck_label = Label.new()
+	root.add_child(_deck_label)
+
+	_card_help_label = Label.new()
+	_card_help_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	root.add_child(_card_help_label)
+
+	_hand_container = HBoxContainer.new()
+	_hand_container.add_theme_constant_override("separation", 8)
+	root.add_child(_hand_container)
+
+	var bottom := HBoxContainer.new()
+	bottom.add_theme_constant_override("separation", 10)
+	root.add_child(bottom)
+
+	_end_turn_button = Button.new()
+	_end_turn_button.text = "턴 종료"
+	_end_turn_button.disabled = true
+	_end_turn_button.pressed.connect(_on_end_turn_pressed)
+	bottom.add_child(_end_turn_button)
+
+	_log_view = RichTextLabel.new()
+	_log_view.custom_minimum_size = Vector2(520.0, 76.0)
+	_log_view.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_log_view.scroll_following = true
+	bottom.add_child(_log_view)
+	_refresh_card_ui()
+
+
+func _refresh_card_ui() -> void:
+	if _deck_label == null or _hand_container == null:
+		return
+
+	for child in _hand_container.get_children():
+		child.queue_free()
+
+	if not _game_started:
+		_deck_label.text = "카드 덱: 게임 시작 후 표시"
+		_card_help_label.text = "시작 위치를 선택하고 게임 시작을 누르면 이동/수색 카드가 손패에 들어옵니다."
+		if _end_turn_button != null:
+			_end_turn_button.disabled = true
+		return
+
+	_deck_label.text = _card_state.get_summary_text()
+	_card_help_label.text = "카드를 고른 뒤 던전 타일을 클릭하세요. 이동과 수색 모두 카드로만 진행됩니다."
+	if _selected_hand_index >= 0 and _selected_hand_index < _card_state.deck.hand.size():
+		var selected_card := _card_state.deck.hand[_selected_hand_index]
+		_card_help_label.text = "%s 대상 선택 중: %s" % [selected_card["name"], selected_card["description"]]
+
+	for i in range(_card_state.deck.hand.size()):
+		var card := _card_state.deck.hand[i]
+		var button := Button.new()
+		button.custom_minimum_size = Vector2(150.0, 70.0)
+		button.text = "%s\n%s / %s" % [
+			String(card["name"]),
+			String(card["type"]),
+			DungeonCardDatabase.get_job_label(String(card["job"])),
+		]
+		button.tooltip_text = String(card["description"])
+		button.disabled = i == _selected_hand_index
+		button.pressed.connect(_on_card_button_pressed.bind(i))
+		_hand_container.add_child(button)
+
+	if _end_turn_button != null:
+		_end_turn_button.disabled = false
+	if _log_view != null:
+		_log_view.text = "\n".join(_card_state.event_log.slice(maxi(0, _card_state.event_log.size() - 5), _card_state.event_log.size()))
+
+
+func _on_card_button_pressed(hand_index: int) -> void:
+	if not _game_started or hand_index < 0 or hand_index >= _card_state.deck.hand.size():
+		return
+
+	var card := _card_state.deck.hand[hand_index]
+	if String(card.get("target_mode", "")) == DungeonCardDatabase.TARGET_SELF:
+		_card_state.use_card(hand_index, _card_state.party_cell)
+		_selected_hand_index = -1
+	else:
+		_selected_hand_index = hand_index
+	_refresh_card_ui()
+
+
+func _use_selected_card_on_cell(cell: Vector2i) -> void:
+	if _selected_hand_index < 0:
+		_update_status("먼저 이동 또는 수색 카드를 선택하세요.")
+		return
+	if cell == INVALID_CELL:
+		_update_status("카드 대상이 될 던전 타일을 선택하세요.")
+		return
+
+	var did_play := _card_state.use_card(_selected_hand_index, cell)
+	if did_play:
+		_selected_hand_index = -1
+		_selected_start_cell = _card_state.party_cell
+		_place_character(_card_state.party_cell)
+		_refresh_revealed_tiles()
+	_update_status(_card_state.get_summary_text())
+	_refresh_card_ui()
+
+
+func _on_end_turn_pressed() -> void:
+	if not _game_started:
+		return
+
+	_selected_hand_index = -1
+	_card_state.end_turn()
+	_update_status(_card_state.get_summary_text())
+	_refresh_card_ui()
+
+
+func _refresh_revealed_tiles() -> void:
+	for cell in _card_state.get_revealed_cells():
+		_set_tile_focused(cell, cell == _hovered_cell)
+
+
+func _get_floor_cells_array() -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	for cell in _floor_cells.keys():
+		result.append(cell)
+	return result
 
 
 func _get_tile_position(cell: Vector2i) -> Vector3:
