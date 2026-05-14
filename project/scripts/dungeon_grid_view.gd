@@ -19,6 +19,7 @@ const TILE_BORDER_WIDTH := 0.035
 const TILE_BORDER_HEIGHT := 0.018
 const GENERATED_ROOT_NAME := "GeneratedFloor"
 const CHARACTER_ROOT_NAME := "TestCharacter"
+const UNIT_ROOT_NAME := "EncounterUnits"
 const FLOOR_TEXTURE_PATH := "res://assets/art/tilesets/checker_floor.png"
 const CHARACTER_TEXTURE_PATH := "res://assets/art/characters/test_side_character_imagegen_trimmed.png"
 
@@ -66,6 +67,8 @@ var _border_material: StandardMaterial3D
 var _character_material: StandardMaterial3D
 var _character_texture: Texture2D
 var _character_node: MeshInstance3D
+var _ally_token_material: StandardMaterial3D
+var _enemy_token_material: StandardMaterial3D
 var _card_state := CardDungeonState.new()
 var _selected_hand_index := -1
 var _deck_label: Label
@@ -362,11 +365,13 @@ func _start_game() -> void:
 
 	_game_started = true
 	_selected_hand_index = -1
-	_card_state.setup(_get_floor_cells_array(), _selected_start_cell, 1205)
+	_card_state.setup(_get_floor_cells_array(), _selected_start_cell, 1205, CardDungeonState.PHASE_ENCOUNTER)
 	if _start_button != null:
 		_start_button.disabled = true
 		_start_button.text = "게임 시작됨"
 	_update_status("카드 기반 탐험 시작 - 이동/수색 카드를 선택하세요.")
+	_place_character(_card_state.get_leader_cell())
+	_sync_unit_tokens()
 	_refresh_card_ui()
 
 
@@ -480,6 +485,26 @@ func _get_character_material() -> StandardMaterial3D:
 	_character_material.albedo_color = Color.WHITE
 	_character_material.albedo_texture = _get_character_texture()
 	return _character_material
+
+
+func _get_ally_token_material() -> StandardMaterial3D:
+	if _ally_token_material != null:
+		return _ally_token_material
+
+	_ally_token_material = StandardMaterial3D.new()
+	_ally_token_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_ally_token_material.albedo_color = Color(0.2, 0.75, 1.0, 1.0)
+	return _ally_token_material
+
+
+func _get_enemy_token_material() -> StandardMaterial3D:
+	if _enemy_token_material != null:
+		return _enemy_token_material
+
+	_enemy_token_material = StandardMaterial3D.new()
+	_enemy_token_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_enemy_token_material.albedo_color = Color(1.0, 0.25, 0.22, 1.0)
+	return _enemy_token_material
 
 
 func _get_character_texture() -> Texture2D:
@@ -645,7 +670,7 @@ func _refresh_card_ui() -> void:
 			_end_turn_button.disabled = true
 		return
 
-	_deck_label.text = _card_state.get_summary_text()
+	_deck_label.text = "%s | %s" % [_card_state.get_summary_text(), _card_state.get_enemy_intent_text().replace("\n", " / ")]
 	_card_help_label.text = "카드를 고른 뒤 던전 타일을 클릭하세요. 이동과 수색 모두 카드로만 진행됩니다."
 	if _selected_hand_index >= 0 and _selected_hand_index < _card_state.deck.hand.size():
 		var selected_card := _card_state.deck.hand[_selected_hand_index]
@@ -695,8 +720,9 @@ func _use_selected_card_on_cell(cell: Vector2i) -> void:
 	var did_play := _card_state.use_card(_selected_hand_index, cell)
 	if did_play:
 		_selected_hand_index = -1
-		_selected_start_cell = _card_state.party_cell
-		_place_character(_card_state.party_cell)
+		_selected_start_cell = _card_state.get_leader_cell()
+		_place_character(_card_state.get_leader_cell())
+		_sync_unit_tokens()
 		_refresh_revealed_tiles()
 	_update_status(_card_state.get_summary_text())
 	_refresh_card_ui()
@@ -708,6 +734,8 @@ func _on_end_turn_pressed() -> void:
 
 	_selected_hand_index = -1
 	_card_state.end_turn()
+	_place_character(_card_state.get_leader_cell())
+	_sync_unit_tokens()
 	_update_status(_card_state.get_summary_text())
 	_refresh_card_ui()
 
@@ -722,6 +750,45 @@ func _get_floor_cells_array() -> Array[Vector2i]:
 	for cell in _floor_cells.keys():
 		result.append(cell)
 	return result
+
+
+func _sync_unit_tokens() -> void:
+	var previous := get_node_or_null(UNIT_ROOT_NAME)
+	if previous != null:
+		remove_child(previous)
+		previous.free()
+	if not _game_started:
+		return
+
+	var root := Node3D.new()
+	root.name = UNIT_ROOT_NAME
+	add_child(root)
+
+	var ally_mesh := BoxMesh.new()
+	ally_mesh.size = Vector3(0.38, 0.38, 0.38)
+	var enemy_mesh := CylinderMesh.new()
+	enemy_mesh.top_radius = 0.28
+	enemy_mesh.bottom_radius = 0.28
+	enemy_mesh.height = 0.55
+
+	for ally in _card_state.party_units:
+		if int(ally.get("hp", 0)) <= 0 or String(ally["id"]) == "warrior":
+			continue
+		_add_unit_token(root, ally_mesh, _get_ally_token_material(), ally["cell"], String(ally["name"]))
+
+	for enemy in _card_state.enemies:
+		if int(enemy.get("hp", 0)) <= 0:
+			continue
+		_add_unit_token(root, enemy_mesh, _get_enemy_token_material(), enemy["cell"], String(enemy["name"]))
+
+
+func _add_unit_token(root: Node3D, mesh: Mesh, material: Material, cell: Vector2i, token_name: String) -> void:
+	var token := MeshInstance3D.new()
+	token.name = token_name
+	token.mesh = mesh
+	token.material_override = material
+	token.position = _get_tile_position(cell) + Vector3(0.0, 0.32, 0.0)
+	root.add_child(token)
 
 
 func _get_tile_position(cell: Vector2i) -> Vector3:
