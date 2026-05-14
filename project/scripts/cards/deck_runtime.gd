@@ -52,6 +52,52 @@ func play_card_at(hand_index: int) -> Dictionary:
 	return card
 
 
+func add_card_to_discard(card: Dictionary) -> void:
+	var copy := card.duplicate(true)
+	if not copy.has("instance_id") or String(copy["instance_id"]).is_empty():
+		copy["instance_id"] = "%s_added_%03d" % [String(copy.get("id", "card")), get_total_count() + 1]
+	discard_pile.append(copy)
+	event_log.append("%s 카드가 버림 더미에 추가되었습니다." % String(copy.get("name", "보상")))
+
+
+func remove_first_card_by_id(card_id: String) -> bool:
+	return _remove_first_from_pile(hand, card_id) or _remove_first_from_pile(discard_pile, card_id) or _remove_first_from_pile(draw_pile, card_id)
+
+
+func remove_first_matching(predicate: Callable) -> Dictionary:
+	var removed := _remove_first_matching_from_pile(hand, predicate)
+	if not removed.is_empty():
+		return removed
+	removed = _remove_first_matching_from_pile(discard_pile, predicate)
+	if not removed.is_empty():
+		return removed
+	removed = _remove_first_matching_from_pile(draw_pile, predicate)
+	if not removed.is_empty():
+		return removed
+	return {}
+
+
+func upgrade_first_matching(predicate: Callable) -> Dictionary:
+	var upgraded := _upgrade_first_matching_from_pile(hand, predicate)
+	if not upgraded.is_empty():
+		return upgraded
+	upgraded = _upgrade_first_matching_from_pile(discard_pile, predicate)
+	if not upgraded.is_empty():
+		return upgraded
+	upgraded = _upgrade_first_matching_from_pile(draw_pile, predicate)
+	if not upgraded.is_empty():
+		return upgraded
+	return {}
+
+
+func get_all_cards() -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	result.append_array(draw_pile)
+	result.append_array(hand)
+	result.append_array(discard_pile)
+	return result
+
+
 func get_total_count() -> int:
 	return draw_pile.size() + hand.size() + discard_pile.size()
 
@@ -84,3 +130,43 @@ func _shuffle(cards: Array[Dictionary]) -> void:
 		var temp := cards[i]
 		cards[i] = cards[swap_index]
 		cards[swap_index] = temp
+
+
+func _remove_first_from_pile(pile: Array[Dictionary], card_id: String) -> bool:
+	for i in range(pile.size()):
+		if String(pile[i].get("id", "")) == card_id:
+			var card := pile[i]
+			pile.remove_at(i)
+			event_log.append("%s 카드가 덱에서 제거되었습니다." % String(card.get("name", "카드")))
+			return true
+	return false
+
+
+func _remove_first_matching_from_pile(pile: Array[Dictionary], predicate: Callable) -> Dictionary:
+	for i in range(pile.size()):
+		if predicate.call(pile[i]):
+			var card: Dictionary = pile[i]
+			pile.remove_at(i)
+			event_log.append("%s 카드가 덱에서 제거되었습니다." % String(card.get("name", "카드")))
+			return card
+	return {}
+
+
+func _upgrade_first_matching_from_pile(pile: Array[Dictionary], predicate: Callable) -> Dictionary:
+	for card in pile:
+		if predicate.call(card):
+			_upgrade_card(card)
+			event_log.append("%s 카드가 강화되었습니다." % String(card.get("name", "카드")))
+			return card
+	return {}
+
+
+func _upgrade_card(card: Dictionary) -> void:
+	card["upgrade_level"] = int(card.get("upgrade_level", 0)) + 1
+	if not String(card.get("name", "")).ends_with("+"):
+		card["name"] = "%s+" % String(card.get("name", "카드"))
+	for numeric_key in ["damage", "front_damage", "flank_damage", "block", "shield", "heal"]:
+		if card.has(numeric_key):
+			card[numeric_key] = int(card[numeric_key]) + 2
+	if card.has("range") and String(card.get("type", "")) in ["이동", "탐험"]:
+		card["range"] = int(card["range"]) + 1

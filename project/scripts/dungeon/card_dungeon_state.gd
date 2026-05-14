@@ -6,8 +6,30 @@ const DungeonDeckRuntime := preload("res://scripts/cards/deck_runtime.gd")
 
 const PHASE_EXPLORE := 0
 const PHASE_ENCOUNTER := 1
+const PHASE_RUN := 2
 const DRAW_PER_TURN := 5
 const INVALID_CELL := Vector2i(-9999, -9999)
+
+const RUN_STATE_EXPLORE := "explore"
+const RUN_STATE_ENCOUNTER := "encounter"
+const RUN_STATE_REWARD := "reward"
+const RUN_STATE_REST := "rest"
+const RUN_STATE_SHOP := "shop"
+const RUN_STATE_COMPLETE := "complete"
+
+const ZONE_COMBAT := "combat"
+const ZONE_EVENT := "event"
+const ZONE_REST := "rest"
+const ZONE_SHOP := "shop"
+const ZONE_BOSS := "boss"
+const ZONE_SEQUENCE := [
+	ZONE_COMBAT,
+	ZONE_EVENT,
+	ZONE_REST,
+	ZONE_SHOP,
+	ZONE_COMBAT,
+	ZONE_BOSS,
+]
 
 var deck := DungeonDeckRuntime.new()
 var floor_cells: Dictionary = {}
@@ -20,6 +42,14 @@ var revealed_points: Dictionary = {}
 var party_units: Array[Dictionary] = []
 var enemies: Array[Dictionary] = []
 var encounter_active := false
+var run_state := RUN_STATE_EXPLORE
+var current_zone_type := ZONE_COMBAT
+var floor_number := 1
+var zone_index := 0
+var gold := 0
+var reward_options: Array[Dictionary] = []
+var completed_zones: Array[String] = []
+var run_complete := false
 var event_log: Array[String] = []
 
 var _rng := RandomNumberGenerator.new()
@@ -35,6 +65,14 @@ func setup(cells: Array[Vector2i], start_cell: Vector2i, seed: int = 1205, phase
 	party_units.clear()
 	enemies.clear()
 	encounter_active = false
+	run_state = RUN_STATE_EXPLORE
+	current_zone_type = ZONE_COMBAT
+	floor_number = 1
+	zone_index = 0
+	gold = 0
+	reward_options.clear()
+	completed_zones.clear()
+	run_complete = false
 	event_log.clear()
 	party_cell = start_cell
 	turn_number = 0
@@ -50,7 +88,9 @@ func setup(cells: Array[Vector2i], start_cell: Vector2i, seed: int = 1205, phase
 	_build_hidden_points()
 	deck.setup(DungeonCardDatabase.build_phase1_deck() if phase >= PHASE_ENCOUNTER else DungeonCardDatabase.build_phase0_deck(), seed)
 	_build_party_units()
-	if phase >= PHASE_ENCOUNTER:
+	if phase >= PHASE_RUN:
+		_start_current_zone()
+	elif phase >= PHASE_ENCOUNTER:
 		_spawn_test_encounter()
 	start_turn()
 	_log("카드 기반 던전 탐험을 시작했습니다. 시작 위치 (%d, %d)." % [party_cell.x, party_cell.y])
@@ -64,6 +104,9 @@ func start_turn() -> void:
 
 
 func end_turn() -> void:
+	if run_state in [RUN_STATE_REWARD, RUN_STATE_REST, RUN_STATE_SHOP, RUN_STATE_COMPLETE]:
+		_log("현재 단계에서는 보상/휴식/상점 선택을 먼저 처리해야 합니다.")
+		return
 	_log("턴 종료: 공개된 적 행동과 던전 위험을 실행합니다.")
 	if encounter_active:
 		_execute_enemy_intents()
@@ -73,6 +116,9 @@ func end_turn() -> void:
 
 
 func use_card(hand_index: int, target_cell: Vector2i) -> bool:
+	if run_state in [RUN_STATE_REWARD, RUN_STATE_REST, RUN_STATE_SHOP, RUN_STATE_COMPLETE]:
+		_log("현재 단계에서는 카드를 사용할 수 없습니다.")
+		return false
 	if hand_index < 0 or hand_index >= deck.hand.size():
 		_log("카드 사용 실패: 손패 인덱스가 올바르지 않습니다.")
 		return false
@@ -177,12 +223,16 @@ func get_hidden_count() -> int:
 
 
 func get_summary_text() -> String:
-	var mode := "교전" if encounter_active else "탐험"
-	return "턴 %d | %s | 위치 (%d, %d) | %s | 숨김 %d" % [
+	var mode := "교전" if encounter_active else _get_run_state_label()
+	return "층 %d-%d %s | 턴 %d | %s | 위치 (%d, %d) | 골드 %d | %s | 숨김 %d" % [
+		floor_number,
+		zone_index + 1,
+		_get_zone_label(current_zone_type),
 		turn_number,
 		mode,
 		party_cell.x,
 		party_cell.y,
+		gold,
 		deck.get_counts_text(),
 		get_hidden_count(),
 	]
@@ -202,6 +252,130 @@ func get_enemy_intent_text() -> String:
 		if _is_alive(enemy):
 			lines.append("- %s: %s" % [enemy["name"], String(enemy.get("intent_label", "대기"))])
 	return "\n".join(lines)
+
+
+func get_run_action_text() -> String:
+	match run_state:
+		RUN_STATE_REWARD:
+			var reward_names: Array[String] = []
+			for option in reward_options:
+				reward_names.append("%s(%s)" % [String(option.get("name", "보상")), DungeonCardDatabase.get_job_label(String(option.get("job", "")))])
+			return "보상 선택: %s" % ", ".join(reward_names)
+		RUN_STATE_REST:
+			return "휴식 지점: 회복, 카드 강화, 카드 제거 중 하나를 선택합니다."
+		RUN_STATE_SHOP:
+			return "상점: 골드를 사용해 보상 카드 구매 또는 카드 강화를 선택합니다."
+		RUN_STATE_COMPLETE:
+			return "던전 런 완료"
+		_:
+			return get_enemy_intent_text()
+
+
+func choose_reward(option_index: int) -> bool:
+	if run_state != RUN_STATE_REWARD:
+		_log("보상 단계가 아닙니다.")
+		return false
+
+	if option_index >= 0 and option_index < reward_options.size():
+		var reward := reward_options[option_index].duplicate(true)
+		reward["instance_id"] = "%s_floor%d_zone%d" % [String(reward.get("id", "reward")), floor_number, zone_index + 1]
+		deck.add_card_to_discard(reward)
+		_log("보상 획득: %s." % String(reward.get("name", "카드")))
+	else:
+		gold += 10
+		_log("보상 패스: 골드 +10.")
+
+	reward_options.clear()
+	if current_zone_type == ZONE_BOSS:
+		completed_zones.append(current_zone_type)
+		run_complete = true
+		run_state = RUN_STATE_COMPLETE
+		_log("보스를 쓰러뜨리고 던전 런을 완료했습니다.")
+	else:
+		completed_zones.append(current_zone_type)
+		_advance_zone()
+	return true
+
+
+func rest_heal_party() -> bool:
+	if run_state != RUN_STATE_REST:
+		return false
+	for ally in party_units:
+		var heal := int(ceil(float(ally["max_hp"]) * 0.35))
+		ally["hp"] = mini(int(ally["max_hp"]), int(ally["hp"]) + heal)
+	_log("휴식: 모든 파티원이 최대 HP의 35%만큼 회복했습니다.")
+	_complete_utility_zone()
+	return true
+
+
+func rest_upgrade_first_card() -> bool:
+	if run_state != RUN_STATE_REST:
+		return false
+	var upgraded := deck.upgrade_first_matching(func(card: Dictionary) -> bool:
+		return int(card.get("upgrade_level", 0)) <= 0
+	)
+	if upgraded.is_empty():
+		_log("강화할 카드가 없습니다.")
+	else:
+		_log("휴식 강화: %s." % String(upgraded.get("name", "카드")))
+	_complete_utility_zone()
+	return not upgraded.is_empty()
+
+
+func rest_remove_first_basic_card() -> bool:
+	if run_state != RUN_STATE_REST:
+		return false
+	var removed := deck.remove_first_matching(func(card: Dictionary) -> bool:
+		return String(card.get("id", "")).ends_with("_move") or String(card.get("type", "")) == DungeonCardDatabase.TYPE_MOVE
+	)
+	if removed.is_empty():
+		_log("제거할 기본 이동 카드가 없습니다.")
+	else:
+		_log("휴식 정비: %s 제거." % String(removed.get("name", "카드")))
+	_complete_utility_zone()
+	return not removed.is_empty()
+
+
+func shop_buy_card() -> bool:
+	if run_state != RUN_STATE_SHOP:
+		return false
+	if gold < 30:
+		_log("상점 구매 실패: 골드가 부족합니다.")
+		return false
+	var options := _roll_reward_options(ZONE_SHOP, 1)
+	if options.is_empty():
+		return false
+	gold -= 30
+	deck.add_card_to_discard(options[0])
+	_log("상점 구매: %s. 골드 -30." % String(options[0].get("name", "카드")))
+	_complete_utility_zone()
+	return true
+
+
+func shop_upgrade_first_card() -> bool:
+	if run_state != RUN_STATE_SHOP:
+		return false
+	if gold < 20:
+		_log("상점 강화 실패: 골드가 부족합니다.")
+		return false
+	var upgraded := deck.upgrade_first_matching(func(card: Dictionary) -> bool:
+		return int(card.get("upgrade_level", 0)) <= 0
+	)
+	if upgraded.is_empty():
+		_log("상점에서 강화할 카드가 없습니다.")
+		return false
+	gold -= 20
+	_log("상점 강화: %s. 골드 -20." % String(upgraded.get("name", "카드")))
+	_complete_utility_zone()
+	return true
+
+
+func leave_shop() -> bool:
+	if run_state != RUN_STATE_SHOP:
+		return false
+	_log("상점을 떠납니다.")
+	_complete_utility_zone()
+	return true
 
 
 func _move_party(card: Dictionary, target_cell: Vector2i) -> void:
@@ -328,13 +502,130 @@ func _build_party_units() -> void:
 		party_units.append(_make_unit(spec[0], spec[1], "ally", spec[2], cell, spec[3], 0, 1))
 
 
-func _spawn_test_encounter() -> void:
+func _spawn_test_encounter(zone_type: String = ZONE_COMBAT) -> void:
 	encounter_active = true
+	run_state = RUN_STATE_ENCOUNTER
+	current_zone_type = zone_type
+	reward_options.clear()
+	enemies.clear()
 	var enemy_origin := _farthest_floor_cell(party_cell)
-	enemies.append(_make_unit("skeleton", "해골 병사", "enemy", "", enemy_origin, 22, 6, 1))
-	enemies.append(_make_unit("wraith", "망령", "enemy", "", _nearest_floor_cell(enemy_origin + Vector2i(0, 1)), 16, 5, 4))
+	if zone_type == ZONE_BOSS:
+		enemies.append(_make_unit("boss_knight", "문지기 기사", "enemy", "", enemy_origin, 46, 9, 1))
+		enemies.append(_make_unit("boss_orb", "저주 보주", "enemy", "", _nearest_floor_cell(enemy_origin + Vector2i(0, 1)), 24, 7, 4))
+	else:
+		enemies.append(_make_unit("skeleton", "해골 병사", "enemy", "", enemy_origin, 22, 6, 1))
+		enemies.append(_make_unit("wraith", "망령", "enemy", "", _nearest_floor_cell(enemy_origin + Vector2i(0, 1)), 16, 5, 4))
 	_plan_enemy_intents()
-	_log("조우 발생: 현재 던전 격자에서 교전 UI를 엽니다.")
+	_log("%s 조우 발생: 현재 던전 격자에서 교전 UI를 엽니다." % _get_zone_label(zone_type))
+
+
+func _start_current_zone() -> void:
+	if zone_index >= ZONE_SEQUENCE.size():
+		run_state = RUN_STATE_COMPLETE
+		run_complete = true
+		_log("모든 던전 구역을 완료했습니다.")
+		return
+
+	current_zone_type = String(ZONE_SEQUENCE[zone_index])
+	match current_zone_type:
+		ZONE_COMBAT, ZONE_BOSS:
+			_spawn_test_encounter(current_zone_type)
+		ZONE_EVENT:
+			_resolve_event_zone()
+		ZONE_REST:
+			run_state = RUN_STATE_REST
+			_log("휴식 지점에 도착했습니다.")
+		ZONE_SHOP:
+			run_state = RUN_STATE_SHOP
+			_log("상점 지점에 도착했습니다. 현재 골드 %d." % gold)
+		_:
+			_advance_zone()
+
+
+func _advance_zone() -> void:
+	zone_index += 1
+	_start_current_zone()
+
+
+func _complete_utility_zone() -> void:
+	completed_zones.append(current_zone_type)
+	_advance_zone()
+
+
+func _resolve_event_zone() -> void:
+	run_state = RUN_STATE_REWARD
+	gold += 8
+	var revealed := _reveal_hidden_points(2)
+	_log("이벤트 구역 해결: 골드 +8, 단서 %d개 공개." % revealed)
+	reward_options = _roll_reward_options(ZONE_EVENT, 3)
+
+
+func _open_reward(source_type: String) -> void:
+	run_state = RUN_STATE_REWARD
+	gold += 25 if source_type == ZONE_BOSS else 12
+	reward_options = _roll_reward_options(source_type, 3)
+	_log("%s 보상 단계: 카드 1장을 선택하거나 패스할 수 있습니다." % _get_zone_label(source_type))
+
+
+func _roll_reward_options(source_type: String, count: int) -> Array[Dictionary]:
+	var pool := DungeonCardDatabase.build_reward_pool()
+	var options: Array[Dictionary] = []
+	while options.size() < count and not pool.is_empty():
+		var index := _rng.randi_range(0, pool.size() - 1)
+		var card: Dictionary = pool.pop_at(index)
+		card["instance_id"] = "%s_%s_f%d_z%d_%d" % [
+			String(card.get("id", "reward")),
+			source_type,
+			floor_number,
+			zone_index + 1,
+			options.size() + 1,
+		]
+		options.append(card)
+	return options
+
+
+func _reveal_hidden_points(count: int) -> int:
+	var revealed := 0
+	for cell in hidden_points.keys():
+		if revealed >= count:
+			break
+		if revealed_points.has(cell):
+			continue
+		revealed_points[cell] = hidden_points[cell]
+		revealed += 1
+	return revealed
+
+
+func _get_run_state_label() -> String:
+	match run_state:
+		RUN_STATE_REWARD:
+			return "보상"
+		RUN_STATE_REST:
+			return "휴식"
+		RUN_STATE_SHOP:
+			return "상점"
+		RUN_STATE_COMPLETE:
+			return "완료"
+		RUN_STATE_ENCOUNTER:
+			return "교전"
+		_:
+			return "탐험"
+
+
+func _get_zone_label(zone_type: String) -> String:
+	match zone_type:
+		ZONE_COMBAT:
+			return "전투"
+		ZONE_EVENT:
+			return "이벤트"
+		ZONE_REST:
+			return "휴식"
+		ZONE_SHOP:
+			return "상점"
+		ZONE_BOSS:
+			return "보스"
+		_:
+			return zone_type
 
 
 func _make_unit(id: String, display_name: String, team: String, job: String, cell: Vector2i, max_hp: int, attack: int, attack_range: int) -> Dictionary:
@@ -492,6 +783,8 @@ func _remove_defeated_enemies() -> void:
 	if encounter_active and enemies.is_empty():
 		encounter_active = false
 		_log("조우 종료: 보상 접근 가능 상태가 되었습니다.")
+		if current_zone_type in [ZONE_COMBAT, ZONE_BOSS]:
+			_open_reward(current_zone_type)
 
 
 func _is_flanking(actor: Dictionary, target: Dictionary) -> bool:

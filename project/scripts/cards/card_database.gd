@@ -139,6 +139,17 @@ const PHASE1_CARDS := [
 	{"id": "cleric_move", "name": "성직자 이동", "job": JOB_CLERIC, "type": TYPE_MOVE, "effect": "move_actor", "target_mode": TARGET_MOVE_CELL, "range": 3, "count": 1, "description": "성직자를 3칸 이동합니다."},
 ]
 
+const REWARD_CARDS := [
+	{"id": "warrior_cleave", "name": "가르기", "job": JOB_WARRIOR, "type": TYPE_ATTACK, "effect": "attack", "target_mode": TARGET_ENEMY, "range": 1, "damage": 11, "count": 1, "rarity": "common", "description": "인접 적 1명에게 11 피해."},
+	{"id": "warrior_cover_advance", "name": "엄호 전진", "job": JOB_WARRIOR, "type": TYPE_MOVE, "effect": "move_actor", "target_mode": TARGET_MOVE_CELL, "range": 2, "block": 5, "count": 1, "rarity": "common", "description": "전사가 2칸 이동하고 방어 5."},
+	{"id": "mage_chain_lightning", "name": "연쇄 번개", "job": JOB_MAGE, "type": TYPE_ATTACK, "effect": "attack", "target_mode": TARGET_ENEMY, "range": 5, "damage": 12, "count": 1, "rarity": "uncommon", "description": "사거리 5의 적 1명에게 12 피해."},
+	{"id": "mage_deep_scan", "name": "심층 탐지", "job": JOB_MAGE, "type": TYPE_EXPLORE, "effect": "search", "target_mode": TARGET_SEARCH_CELL, "range": 6, "search_radius": 3, "count": 1, "rarity": "uncommon", "description": "넓은 범위의 던전 정보를 밝힙니다."},
+	{"id": "rogue_shadow_step", "name": "그림자 걸음", "job": JOB_ROGUE, "type": TYPE_MOVE, "effect": "move_actor", "target_mode": TARGET_MOVE_CELL, "range": 6, "count": 1, "rarity": "common", "description": "도적을 6칸 이동합니다."},
+	{"id": "rogue_mark_weakness", "name": "약점 표식", "job": JOB_ROGUE, "type": TYPE_SKILL, "effect": "weaken", "target_mode": TARGET_ENEMY, "range": 4, "weak": 2, "count": 1, "rarity": "common", "description": "대상 적을 약화 2턴."},
+	{"id": "cleric_group_heal", "name": "기도의 빛", "job": JOB_CLERIC, "type": TYPE_HEAL, "effect": "heal", "target_mode": TARGET_ALLY, "range": 5, "heal": 16, "low_hp_bonus": 6, "count": 1, "rarity": "uncommon", "description": "아군 1명 HP 16 회복. 낮은 HP면 +6."},
+	{"id": "cleric_sanctuary", "name": "성역", "job": JOB_CLERIC, "type": TYPE_DEFENSE, "effect": "shield", "target_mode": TARGET_ALLY, "range": 5, "shield": 14, "count": 1, "rarity": "common", "description": "아군 1명에게 보호막 14."},
+]
+
 
 static func build_phase0_deck() -> Array[Dictionary]:
 	return _expand_specs(PHASE0_CARDS)
@@ -146,6 +157,10 @@ static func build_phase0_deck() -> Array[Dictionary]:
 
 static func build_phase1_deck() -> Array[Dictionary]:
 	return _expand_specs(PHASE1_CARDS)
+
+
+static func build_reward_pool() -> Array[Dictionary]:
+	return _expand_specs(REWARD_CARDS)
 
 
 static func _expand_specs(specs: Array) -> Array[Dictionary]:

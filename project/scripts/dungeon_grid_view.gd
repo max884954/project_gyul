@@ -73,6 +73,7 @@ var _card_state := CardDungeonState.new()
 var _selected_hand_index := -1
 var _deck_label: Label
 var _card_help_label: Label
+var _run_action_container: HBoxContainer
 var _hand_container: HBoxContainer
 var _end_turn_button: Button
 var _log_view: RichTextLabel
@@ -365,7 +366,7 @@ func _start_game() -> void:
 
 	_game_started = true
 	_selected_hand_index = -1
-	_card_state.setup(_get_floor_cells_array(), _selected_start_cell, 1205, CardDungeonState.PHASE_ENCOUNTER)
+	_card_state.setup(_get_floor_cells_array(), _selected_start_cell, 1205, CardDungeonState.PHASE_RUN)
 	if _start_button != null:
 		_start_button.disabled = true
 		_start_button.text = "게임 시작됨"
@@ -634,6 +635,10 @@ func _build_card_ui() -> void:
 	_card_help_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	root.add_child(_card_help_label)
 
+	_run_action_container = HBoxContainer.new()
+	_run_action_container.add_theme_constant_override("separation", 8)
+	root.add_child(_run_action_container)
+
 	_hand_container = HBoxContainer.new()
 	_hand_container.add_theme_constant_override("separation", 8)
 	root.add_child(_hand_container)
@@ -662,6 +667,9 @@ func _refresh_card_ui() -> void:
 
 	for child in _hand_container.get_children():
 		child.queue_free()
+	if _run_action_container != null:
+		for child in _run_action_container.get_children():
+			child.queue_free()
 
 	if not _game_started:
 		_deck_label.text = "카드 덱: 게임 시작 후 표시"
@@ -670,11 +678,19 @@ func _refresh_card_ui() -> void:
 			_end_turn_button.disabled = true
 		return
 
-	_deck_label.text = "%s | %s" % [_card_state.get_summary_text(), _card_state.get_enemy_intent_text().replace("\n", " / ")]
-	_card_help_label.text = "카드를 고른 뒤 던전 타일을 클릭하세요. 이동과 수색 모두 카드로만 진행됩니다."
+	var run_action_locked := _card_state.run_state in [
+		CardDungeonState.RUN_STATE_REWARD,
+		CardDungeonState.RUN_STATE_REST,
+		CardDungeonState.RUN_STATE_SHOP,
+		CardDungeonState.RUN_STATE_COMPLETE,
+	]
+	_deck_label.text = "%s | %s" % [_card_state.get_summary_text(), _card_state.get_run_action_text().replace("\n", " / ")]
+	_card_help_label.text = _card_state.get_run_action_text() if run_action_locked else "카드를 고른 뒤 던전 타일을 클릭하세요. 이동, 탐색, 교전 모두 카드로만 진행됩니다."
 	if _selected_hand_index >= 0 and _selected_hand_index < _card_state.deck.hand.size():
 		var selected_card := _card_state.deck.hand[_selected_hand_index]
 		_card_help_label.text = "%s 대상 선택 중: %s" % [selected_card["name"], selected_card["description"]]
+
+	_build_run_action_buttons()
 
 	for i in range(_card_state.deck.hand.size()):
 		var card := _card_state.deck.hand[i]
@@ -686,14 +702,97 @@ func _refresh_card_ui() -> void:
 			DungeonCardDatabase.get_job_label(String(card["job"])),
 		]
 		button.tooltip_text = String(card["description"])
-		button.disabled = i == _selected_hand_index
+		button.disabled = run_action_locked or i == _selected_hand_index
 		button.pressed.connect(_on_card_button_pressed.bind(i))
 		_hand_container.add_child(button)
 
 	if _end_turn_button != null:
-		_end_turn_button.disabled = false
+		_end_turn_button.disabled = run_action_locked
 	if _log_view != null:
 		_log_view.text = "\n".join(_card_state.event_log.slice(maxi(0, _card_state.event_log.size() - 5), _card_state.event_log.size()))
+
+
+func _build_run_action_buttons() -> void:
+	if _run_action_container == null:
+		return
+
+	match _card_state.run_state:
+		CardDungeonState.RUN_STATE_REWARD:
+			for i in range(_card_state.reward_options.size()):
+				var reward := _card_state.reward_options[i]
+				_add_run_action_button(
+					"%s\n%s" % [String(reward.get("name", "보상")), DungeonCardDatabase.get_job_label(String(reward.get("job", "")))],
+					_on_reward_button_pressed.bind(i)
+				)
+			_add_run_action_button("패스\n+10G", _on_reward_button_pressed.bind(-1))
+		CardDungeonState.RUN_STATE_REST:
+			_add_run_action_button("회복", _on_rest_heal_pressed)
+			_add_run_action_button("강화", _on_rest_upgrade_pressed)
+			_add_run_action_button("제거", _on_rest_remove_pressed)
+		CardDungeonState.RUN_STATE_SHOP:
+			_add_run_action_button("구매\n30G", _on_shop_buy_pressed, _card_state.gold < 30)
+			_add_run_action_button("강화\n20G", _on_shop_upgrade_pressed, _card_state.gold < 20)
+			_add_run_action_button("나가기", _on_shop_leave_pressed)
+		CardDungeonState.RUN_STATE_COMPLETE:
+			_add_run_action_button("런 완료", _on_run_complete_pressed, true)
+
+
+func _add_run_action_button(label: String, callback: Callable, disabled: bool = false) -> void:
+	var button := Button.new()
+	button.custom_minimum_size = Vector2(118.0, 54.0)
+	button.text = label
+	button.disabled = disabled
+	button.pressed.connect(callback)
+	_run_action_container.add_child(button)
+
+
+func _on_reward_button_pressed(option_index: int) -> void:
+	_card_state.choose_reward(option_index)
+	_after_run_action()
+
+
+func _on_rest_heal_pressed() -> void:
+	_card_state.rest_heal_party()
+	_after_run_action()
+
+
+func _on_rest_upgrade_pressed() -> void:
+	_card_state.rest_upgrade_first_card()
+	_after_run_action()
+
+
+func _on_rest_remove_pressed() -> void:
+	_card_state.rest_remove_first_basic_card()
+	_after_run_action()
+
+
+func _on_shop_buy_pressed() -> void:
+	_card_state.shop_buy_card()
+	_after_run_action()
+
+
+func _on_shop_upgrade_pressed() -> void:
+	_card_state.shop_upgrade_first_card()
+	_after_run_action()
+
+
+func _on_shop_leave_pressed() -> void:
+	_card_state.leave_shop()
+	_after_run_action()
+
+
+func _on_run_complete_pressed() -> void:
+	_after_run_action()
+
+
+func _after_run_action() -> void:
+	_selected_hand_index = -1
+	_selected_start_cell = _card_state.get_leader_cell()
+	_place_character(_card_state.get_leader_cell())
+	_sync_unit_tokens()
+	_refresh_revealed_tiles()
+	_update_status(_card_state.get_summary_text())
+	_refresh_card_ui()
 
 
 func _on_card_button_pressed(hand_index: int) -> void:
