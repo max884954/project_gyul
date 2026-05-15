@@ -49,6 +49,10 @@ const DRAG_SCALE_MULTIPLIER := 1.22
 	set(value):
 		warrior_title_texture = value
 		_queue_editor_preview_update()
+@export var warrior_type_texture: Texture2D = preload("res://assets/art/ui/cards/imagegen_warrior_card_type_area.png"):
+	set(value):
+		warrior_type_texture = value
+		_queue_editor_preview_update()
 @export var warrior_text_texture: Texture2D = preload("res://assets/art/ui/cards/imagegen_warrior_card_text_area.png"):
 	set(value):
 		warrior_text_texture = value
@@ -66,6 +70,10 @@ const DRAG_SCALE_MULTIPLIER := 1.22
 @export var mage_title_texture: Texture2D = preload("res://assets/art/ui/cards/imagegen_mage_card_title_area.png"):
 	set(value):
 		mage_title_texture = value
+		_queue_editor_preview_update()
+@export var mage_type_texture: Texture2D = preload("res://assets/art/ui/cards/imagegen_mage_card_type_area.png"):
+	set(value):
+		mage_type_texture = value
 		_queue_editor_preview_update()
 @export var mage_text_texture: Texture2D = preload("res://assets/art/ui/cards/imagegen_mage_card_text_area.png"):
 	set(value):
@@ -85,6 +93,10 @@ const DRAG_SCALE_MULTIPLIER := 1.22
 	set(value):
 		rogue_title_texture = value
 		_queue_editor_preview_update()
+@export var rogue_type_texture: Texture2D = preload("res://assets/art/ui/cards/imagegen_rogue_card_type_area.png"):
+	set(value):
+		rogue_type_texture = value
+		_queue_editor_preview_update()
 @export var rogue_text_texture: Texture2D = preload("res://assets/art/ui/cards/imagegen_rogue_card_text_area.png"):
 	set(value):
 		rogue_text_texture = value
@@ -103,6 +115,10 @@ const DRAG_SCALE_MULTIPLIER := 1.22
 	set(value):
 		cleric_title_texture = value
 		_queue_editor_preview_update()
+@export var cleric_type_texture: Texture2D = preload("res://assets/art/ui/cards/imagegen_cleric_card_type_area.png"):
+	set(value):
+		cleric_type_texture = value
+		_queue_editor_preview_update()
 @export var cleric_text_texture: Texture2D = preload("res://assets/art/ui/cards/imagegen_cleric_card_text_area.png"):
 	set(value):
 		cleric_text_texture = value
@@ -111,6 +127,7 @@ const DRAG_SCALE_MULTIPLIER := 1.22
 @onready var _background: TextureRect = %CardBackground
 @onready var _illustration: TextureRect = %CardIllustration
 @onready var _title_area: TextureRect = %CardTitleArea
+@onready var _type_area: TextureRect = %CardTypeArea
 @onready var _text_area: TextureRect = %CardTextArea
 @onready var _border: TextureRect = %CardBorder
 @onready var _title_label: Label = %TitleLabel
@@ -228,6 +245,7 @@ func _apply_job_skin(job: String) -> void:
 	_apply_background_texture(skin["background"] as Texture2D)
 	_border.texture = skin["border"] as Texture2D
 	_title_area.texture = skin["title"] as Texture2D
+	_type_area.texture = skin["type"] as Texture2D
 	_text_area.texture = skin["text"] as Texture2D
 
 
@@ -252,6 +270,7 @@ func _get_job_skin(job: String) -> Dictionary:
 				"background": mage_background_texture,
 				"border": mage_border_texture,
 				"title": mage_title_texture,
+				"type": mage_type_texture,
 				"text": mage_text_texture,
 			}
 		DungeonCardDatabase.JOB_ROGUE:
@@ -259,6 +278,7 @@ func _get_job_skin(job: String) -> Dictionary:
 				"background": rogue_background_texture,
 				"border": rogue_border_texture,
 				"title": rogue_title_texture,
+				"type": rogue_type_texture,
 				"text": rogue_text_texture,
 			}
 		DungeonCardDatabase.JOB_CLERIC:
@@ -266,6 +286,7 @@ func _get_job_skin(job: String) -> Dictionary:
 				"background": cleric_background_texture,
 				"border": cleric_border_texture,
 				"title": cleric_title_texture,
+				"type": cleric_type_texture,
 				"text": cleric_text_texture,
 			}
 		_:
@@ -273,6 +294,7 @@ func _get_job_skin(job: String) -> Dictionary:
 				"background": warrior_background_texture,
 				"border": warrior_border_texture,
 				"title": warrior_title_texture,
+				"type": warrior_type_texture,
 				"text": warrior_text_texture,
 			}
 

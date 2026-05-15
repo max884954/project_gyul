@@ -28,14 +28,17 @@ func _test_card_layer_assets() -> void:
 	for job in ["warrior", "mage", "rogue", "cleric"]:
 		var border_path := "res://assets/art/ui/cards/imagegen_%s_card_border_only.png" % job
 		var title_path := "res://assets/art/ui/cards/imagegen_%s_card_title_area.png" % job
+		var type_path := "res://assets/art/ui/cards/imagegen_%s_card_type_area.png" % job
 		var text_path := "res://assets/art/ui/cards/imagegen_%s_card_text_area.png" % job
 		_expect(FileAccess.file_exists(border_path), "%s card border asset should exist." % job)
 		_expect(FileAccess.file_exists(title_path), "%s card title-area asset should exist." % job)
+		_expect(FileAccess.file_exists(type_path), "%s card type-area asset should exist." % job)
 		_expect(FileAccess.file_exists(text_path), "%s card text-area asset should exist." % job)
 		_expect(not FileAccess.file_exists("res://assets/art/ui/cards/%s_card_design.png" % job), "%s simple card design should be removed." % job)
 		_expect(_image_matches_size(border_path, Vector2i(1024, 1536)), "%s card border should use the full card canvas." % job)
-		_expect(_image_matches_size(title_path, Vector2i(720, 100)), "%s card title area should use the title panel canvas." % job)
-		_expect(_image_matches_size(text_path, Vector2i(720, 400)), "%s card text area should use the text panel canvas." % job)
+		_expect(_image_matches_size(title_path, Vector2i(1024, 225)), "%s card title area should use the title panel canvas." % job)
+		_expect(_image_matches_size(type_path, Vector2i(1024, 200)), "%s card type area should use the type panel canvas." % job)
+		_expect(_image_matches_size(text_path, Vector2i(1024, 750)), "%s card text area should use the text panel canvas." % job)
 
 	var unique_art_paths := {}
 	for card in DungeonCardDatabase.build_all_card_specs():
@@ -61,13 +64,16 @@ func _test_card_layer_assets() -> void:
 	var illustration := hand_card.get_node("%CardIllustration") as TextureRect
 	var border := hand_card.get_node("%CardBorder") as TextureRect
 	var title_area := hand_card.get_node("%CardTitleArea") as TextureRect
+	var type_area := hand_card.get_node("%CardTypeArea") as TextureRect
 	var text_area := hand_card.get_node("%CardTextArea") as TextureRect
 	_expect(background != null, "Hand card scene should expose a card background layer for optional art.")
 	_expect(border != null, "Hand card scene should expose a card border layer.")
 	_expect(title_area != null, "Hand card scene should expose a title-area layer.")
+	_expect(type_area != null, "Hand card scene should expose a type-area layer.")
 	_expect(text_area != null, "Hand card scene should expose a text-area layer.")
 	_expect(border != null and border.texture != null, "Hand card scene should preload a visible default card border texture.")
 	_expect(title_area != null and title_area.texture != null, "Hand card scene should preload a visible default title-area texture.")
+	_expect(type_area != null and type_area.texture != null, "Hand card scene should preload a visible default type-area texture.")
 	_expect(text_area != null and text_area.texture != null, "Hand card scene should preload a visible default text-area texture.")
 	_expect(illustration != null, "Hand card scene should expose a card illustration slot.")
 	_expect(background != null and background.position == illustration.position and background.size == illustration.size, "Card background should occupy the image slot.")
@@ -82,7 +88,7 @@ func _test_card_layer_assets() -> void:
 	_expect(illustration != null and illustration.position.y >= 26.0 and illustration.size.y >= 44.0, "Illustration slot should stay between the title and text areas.")
 	_expect(type_label != null and type_label.position.y >= 0.0, "Type label should stay inside the type-area layer.")
 	_expect(description_label != null and text_area != null and description_label.position.y >= 0.0 and description_label.position.y < text_area.size.y, "Description label should stay inside the text-area layer.")
-	_expect(_hand_card_applies_job_skins(hand_card, border, title_area, text_area), "Hand card should apply every job skin through scene-editable texture properties.")
+	_expect(_hand_card_applies_job_skins(hand_card, border, title_area, type_area, text_area), "Hand card should apply every job skin through scene-editable texture properties.")
 	var sample_card := DungeonCardDatabase.build_all_card_specs()[0]
 	hand_card.call("setup", sample_card, 0, false, false)
 	_expect(background != null and _texture_ends_with(background.texture, "warrior_move_bg.png"), "Hand card should apply generated card art to the background layer.")
@@ -222,12 +228,14 @@ func _image_matches_size(texture_path: String, expected_size: Vector2i) -> bool:
 	return image.get_size() == expected_size
 
 
-func _hand_card_applies_job_skins(hand_card: Node, border: TextureRect, title_area: TextureRect, text_area: TextureRect) -> bool:
+func _hand_card_applies_job_skins(hand_card: Node, border: TextureRect, title_area: TextureRect, type_area: TextureRect, text_area: TextureRect) -> bool:
 	for job in ["warrior", "mage", "rogue", "cleric"]:
 		hand_card.call("setup", {"job": job, "name": "Preview", "type": "Type", "description": "Text"}, 0, false, false)
 		if not _texture_ends_with(border.texture, "imagegen_%s_card_border_only.png" % job):
 			return false
 		if not _texture_ends_with(title_area.texture, "imagegen_%s_card_title_area.png" % job):
+			return false
+		if not _texture_ends_with(type_area.texture, "imagegen_%s_card_type_area.png" % job):
 			return false
 		if not _texture_ends_with(text_area.texture, "imagegen_%s_card_text_area.png" % job):
 			return false
