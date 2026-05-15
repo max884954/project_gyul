@@ -5,6 +5,7 @@ const CardDungeonState := preload("res://scripts/dungeon/card_dungeon_state.gd")
 const DungeonCardDatabase := preload("res://scripts/cards/card_database.gd")
 const DungeonSaveRuntime := preload("res://scripts/system/dungeon_save_runtime.gd")
 const DungeonTutorialFlow := preload("res://scripts/tutorial/dungeon_tutorial_flow.gd")
+const ACTION_BUTTON_SCENE := preload("res://scenes/ui/dungeon_action_button.tscn")
 
 const MAP_SIZE := Vector2i(34, 26)
 const ROOM_COUNT := 7
@@ -34,18 +35,23 @@ const CAMERA_VIEW_YAWS := [
 	deg_to_rad(225.0),
 	deg_to_rad(135.0),
 ]
+const CAMERA_VIEW_DOWN := 0
+const CAMERA_VIEW_LEFT := 1
+const CAMERA_VIEW_UP := 2
+const CAMERA_VIEW_RIGHT := 3
 const CAMERA_TURN_SPEED := 7.0
 const CAMERA_ZOOM_DRAG_SPEED := 0.025
 const CAMERA_ZOOM_WHEEL_STEP := 0.55
 const CAMERA_MIN_SIZE := 5.0
 const CAMERA_MAX_SIZE := 18.0
-
 const CHARACTER_WORLD_HEIGHT := TILE_SIZE * 2.2
 const CHARACTER_FLOOR_OFFSET := 0.01
 const CHARACTER_FACING_YAW := deg_to_rad(90.0)
 
 @onready var _start_button: Button = %StartButton
 @onready var _status_label: Label = %StatusLabel
+@onready var _card_hud: PanelContainer = $CanvasLayer/DungeonCardHud
+@onready var _hand_container: Control = $CanvasLayer/DungeonHandLayer
 
 var _rng := RandomNumberGenerator.new()
 var _camera: Camera3D
@@ -63,6 +69,8 @@ var _is_zoom_dragging := false
 
 var _floor_material: StandardMaterial3D
 var _focus_material: StandardMaterial3D
+var _valid_target_material: StandardMaterial3D
+var _invalid_target_material: StandardMaterial3D
 var _start_material: StandardMaterial3D
 var _revealed_material: StandardMaterial3D
 var _border_material: StandardMaterial3D
@@ -75,10 +83,13 @@ var _card_state := CardDungeonState.new()
 var _save_runtime := DungeonSaveRuntime.new()
 var _tutorial := DungeonTutorialFlow.new()
 var _selected_hand_index := -1
+var _hovered_hand_index := -1
+var _card_drag_active := false
+var _drag_hand_index := -1
+var _drag_preview_cell := INVALID_CELL
 var _deck_label: Label
 var _card_help_label: Label
 var _run_action_container: HBoxContainer
-var _hand_container: HBoxContainer
 var _save_button: Button
 var _load_button: Button
 var _tutorial_button: Button
@@ -105,7 +116,7 @@ func _setup_ui() -> void:
 		_start_button.pressed.connect(_start_game)
 
 	_update_status("시작 위치를 선택하세요.")
-	_build_card_ui()
+	_bind_card_ui()
 
 
 func _setup_camera() -> void:
@@ -134,10 +145,14 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _handle_mouse_button(event: InputEventMouseButton) -> void:
+	if _card_drag_active:
+		if event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
+			_cancel_card_drag()
+		return
 	if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		var cell := _get_mouse_grid_cell()
 		if _game_started:
-			_use_selected_card_on_cell(cell)
+			return
 		else:
 			_select_start_cell(cell)
 	elif event.button_index == MOUSE_BUTTON_MIDDLE:
@@ -161,10 +176,25 @@ func _handle_key(event: InputEventKey) -> void:
 		_rotate_camera_view(-1)
 	elif event.keycode == KEY_Q:
 		_rotate_camera_view(1)
+	elif event.keycode == KEY_W:
+		_set_camera_view(CAMERA_VIEW_UP)
+	elif event.keycode == KEY_A:
+		_set_camera_view(CAMERA_VIEW_LEFT)
+	elif event.keycode == KEY_S:
+		_set_camera_view(CAMERA_VIEW_DOWN)
+	elif event.keycode == KEY_D:
+		_set_camera_view(CAMERA_VIEW_RIGHT)
+	elif event.keycode == KEY_ESCAPE:
+		if _card_drag_active or _selected_hand_index >= 0:
+			_cancel_card_drag()
 
 
 func _rotate_camera_view(direction: int) -> void:
-	_camera_view_index = wrapi(_camera_view_index + direction, 0, CAMERA_VIEW_YAWS.size())
+	_set_camera_view(wrapi(_camera_view_index + direction, 0, CAMERA_VIEW_YAWS.size()))
+
+
+func _set_camera_view(view_index: int) -> void:
+	_camera_view_index = clampi(view_index, 0, CAMERA_VIEW_YAWS.size() - 1)
 	_camera_target_yaw = CAMERA_VIEW_YAWS[_camera_view_index]
 
 
@@ -445,6 +475,32 @@ func _get_focus_material() -> StandardMaterial3D:
 	return _focus_material
 
 
+func _get_valid_target_material() -> StandardMaterial3D:
+	if _valid_target_material != null:
+		return _valid_target_material
+
+	_valid_target_material = StandardMaterial3D.new()
+	_valid_target_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_valid_target_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_valid_target_material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	_valid_target_material.albedo_color = Color(0.25, 1.0, 0.45, 1.0)
+	_valid_target_material.albedo_texture = _load_floor_texture()
+	return _valid_target_material
+
+
+func _get_invalid_target_material() -> StandardMaterial3D:
+	if _invalid_target_material != null:
+		return _invalid_target_material
+
+	_invalid_target_material = StandardMaterial3D.new()
+	_invalid_target_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_invalid_target_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_invalid_target_material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	_invalid_target_material.albedo_color = Color(1.0, 0.22, 0.18, 1.0)
+	_invalid_target_material.albedo_texture = _load_floor_texture()
+	return _invalid_target_material
+
+
 func _get_start_material() -> StandardMaterial3D:
 	if _start_material != null:
 		return _start_material
@@ -549,6 +605,9 @@ func _load_texture(path: String) -> Texture2D:
 
 
 func _update_hovered_tile() -> void:
+	if _card_drag_active:
+		_update_drag_preview_cell()
+		return
 	var hovered_cell := _get_mouse_grid_cell()
 	if hovered_cell == _hovered_cell:
 		return
@@ -593,7 +652,10 @@ func _set_tile_focused(cell: Vector2i, focused: bool) -> void:
 	if tile == null:
 		return
 
-	if cell == _selected_start_cell:
+	if focused and _card_drag_active and cell == _drag_preview_cell:
+		tile.material_override = _get_valid_target_material() if _is_drag_preview_valid(cell) else _get_invalid_target_material()
+		tile.position = _get_tile_position(cell) + Vector3.UP * 0.08
+	elif cell == _selected_start_cell:
 		tile.material_override = _get_start_material()
 		tile.position = _get_tile_position(cell) + Vector3.UP * 0.06
 	elif focused:
@@ -608,94 +670,52 @@ func _set_tile_focused(cell: Vector2i, focused: bool) -> void:
 	tile.scale = Vector3.ONE
 
 
-func _build_card_ui() -> void:
-	var canvas := get_node_or_null("CanvasLayer") as CanvasLayer
-	if canvas == null or Engine.is_editor_hint():
+func _bind_card_ui() -> void:
+	if _card_hud == null or Engine.is_editor_hint():
 		return
 
-	var panel := PanelContainer.new()
-	panel.name = "CardPanel"
-	panel.anchor_left = 0.0
-	panel.anchor_top = 1.0
-	panel.anchor_right = 1.0
-	panel.anchor_bottom = 1.0
-	panel.offset_left = 24.0
-	panel.offset_top = -230.0
-	panel.offset_right = -24.0
-	panel.offset_bottom = -24.0
-	canvas.add_child(panel)
-
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 14)
-	margin.add_theme_constant_override("margin_top", 10)
-	margin.add_theme_constant_override("margin_right", 14)
-	margin.add_theme_constant_override("margin_bottom", 10)
-	panel.add_child(margin)
-
-	var root := VBoxContainer.new()
-	root.add_theme_constant_override("separation", 8)
-	margin.add_child(root)
-
-	_deck_label = Label.new()
-	root.add_child(_deck_label)
-
-	_card_help_label = Label.new()
-	_card_help_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	root.add_child(_card_help_label)
-
-	_run_action_container = HBoxContainer.new()
-	_run_action_container.add_theme_constant_override("separation", 8)
-	root.add_child(_run_action_container)
-
-	_hand_container = HBoxContainer.new()
-	_hand_container.add_theme_constant_override("separation", 8)
-	root.add_child(_hand_container)
-
-	var bottom := HBoxContainer.new()
-	bottom.add_theme_constant_override("separation", 10)
-	root.add_child(bottom)
-
-	_save_button = Button.new()
-	_save_button.text = "저장"
-	_save_button.disabled = true
-	_save_button.pressed.connect(_on_save_pressed)
-	bottom.add_child(_save_button)
-
-	_load_button = Button.new()
-	_load_button.text = "불러오기"
-	_load_button.pressed.connect(_on_load_pressed)
-	bottom.add_child(_load_button)
-
-	_tutorial_button = Button.new()
-	_tutorial_button.text = "가이드"
-	_tutorial_button.pressed.connect(_on_tutorial_pressed)
-	bottom.add_child(_tutorial_button)
-
-	_end_turn_button = Button.new()
-	_end_turn_button.text = "턴 종료"
-	_end_turn_button.disabled = true
-	_end_turn_button.pressed.connect(_on_end_turn_pressed)
-	bottom.add_child(_end_turn_button)
-
-	_log_view = RichTextLabel.new()
-	_log_view.custom_minimum_size = Vector2(520.0, 76.0)
-	_log_view.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_log_view.scroll_following = true
-	bottom.add_child(_log_view)
+	_deck_label = _card_hud.get_node("%DeckLabel") as Label
+	_card_help_label = _card_hud.get_node("%CardHelpLabel") as Label
+	_run_action_container = _card_hud.get_node("%RunActionContainer") as HBoxContainer
+	_save_button = _card_hud.get_node("%SaveButton") as Button
+	_load_button = _card_hud.get_node("%LoadButton") as Button
+	_tutorial_button = _card_hud.get_node("%TutorialButton") as Button
+	_end_turn_button = _card_hud.get_node("%EndTurnButton") as Button
+	_log_view = _card_hud.get_node("%LogView") as RichTextLabel
+	_connect_button(_save_button, _on_save_pressed)
+	_connect_button(_load_button, _on_load_pressed)
+	_connect_button(_tutorial_button, _on_tutorial_pressed)
+	_connect_button(_end_turn_button, _on_end_turn_pressed)
+	_connect_ui_signal(_hand_container, "card_pressed", Callable(self, "_on_card_button_pressed"))
+	_connect_ui_signal(_hand_container, "card_hovered", Callable(self, "_on_card_hovered"))
+	_connect_ui_signal(_hand_container, "card_unhovered", Callable(self, "_on_card_unhovered"))
+	_connect_ui_signal(_hand_container, "card_drag_started", Callable(self, "_on_card_drag_started"))
+	_connect_ui_signal(_hand_container, "card_drag_moved", Callable(self, "_on_card_drag_moved"))
+	_connect_ui_signal(_hand_container, "card_drag_released", Callable(self, "_on_card_drag_released"))
+	_connect_ui_signal(_hand_container, "card_drag_cancelled", Callable(self, "_on_card_drag_cancelled"))
 	_refresh_card_ui()
+
+
+func _connect_button(button: Button, callback: Callable) -> void:
+	if button != null and not button.pressed.is_connected(callback):
+		button.pressed.connect(callback)
+
+
+func _connect_ui_signal(source: Object, signal_name: StringName, callback: Callable) -> void:
+	if source != null and source.has_signal(signal_name) and not source.is_connected(signal_name, callback):
+		source.connect(signal_name, callback)
 
 
 func _refresh_card_ui() -> void:
 	if _deck_label == null or _hand_container == null:
 		return
 
-	for child in _hand_container.get_children():
-		child.queue_free()
 	if _run_action_container != null:
 		for child in _run_action_container.get_children():
 			child.queue_free()
 
 	if not _game_started:
+		_set_hand_cards([], false)
 		_deck_label.text = "카드 덱: 게임 시작 후 표시"
 		_card_help_label.text = _tutorial.get_current_text()
 		if _save_button != null:
@@ -706,12 +726,9 @@ func _refresh_card_ui() -> void:
 			_end_turn_button.disabled = true
 		return
 
-	var run_action_locked := _card_state.run_state in [
-		CardDungeonState.RUN_STATE_REWARD,
-		CardDungeonState.RUN_STATE_REST,
-		CardDungeonState.RUN_STATE_SHOP,
-		CardDungeonState.RUN_STATE_COMPLETE,
-	]
+	if _hovered_hand_index >= _card_state.deck.hand.size():
+		_hovered_hand_index = -1
+	var run_action_locked := _is_run_action_locked()
 	_deck_label.text = "%s | %s" % [_card_state.get_summary_text(), _card_state.get_run_action_text().replace("\n", " / ")]
 	_card_help_label.text = _card_state.get_run_action_text() if run_action_locked else "카드를 고른 뒤 던전 타일을 클릭하세요. 이동, 탐색, 교전 모두 카드로만 진행됩니다."
 	if _tutorial.enabled:
@@ -721,20 +738,7 @@ func _refresh_card_ui() -> void:
 		_card_help_label.text = "%s 대상 선택 중: %s" % [selected_card["name"], selected_card["description"]]
 
 	_build_run_action_buttons()
-
-	for i in range(_card_state.deck.hand.size()):
-		var card := _card_state.deck.hand[i]
-		var button := Button.new()
-		button.custom_minimum_size = Vector2(150.0, 70.0)
-		button.text = "%s\n%s / %s" % [
-			String(card["name"]),
-			String(card["type"]),
-			DungeonCardDatabase.get_job_label(String(card["job"])),
-		]
-		button.tooltip_text = String(card["description"])
-		button.disabled = run_action_locked or i == _selected_hand_index
-		button.pressed.connect(_on_card_button_pressed.bind(i))
-		_hand_container.add_child(button)
+	_set_hand_cards(_card_state.deck.hand, run_action_locked)
 
 	if _end_turn_button != null:
 		_end_turn_button.disabled = run_action_locked
@@ -746,6 +750,25 @@ func _refresh_card_ui() -> void:
 		_tutorial_button.text = "가이드 끄기" if _tutorial.enabled else "가이드 켜기"
 	if _log_view != null:
 		_log_view.text = "\n".join(_card_state.event_log.slice(maxi(0, _card_state.event_log.size() - 5), _card_state.event_log.size()))
+
+
+func _set_hand_cards(cards: Array, run_action_locked: bool) -> void:
+	if _hand_container != null and _hand_container.has_method("set_cards"):
+		_hand_container.call("set_cards", cards, _selected_hand_index, _hovered_hand_index, run_action_locked)
+
+
+func _update_hand_layout_state(run_action_locked: bool) -> void:
+	if _hand_container != null and _hand_container.has_method("set_layout_state"):
+		_hand_container.call("set_layout_state", _selected_hand_index, _hovered_hand_index, run_action_locked)
+
+
+func _is_run_action_locked() -> bool:
+	return _card_state.run_state in [
+		CardDungeonState.RUN_STATE_REWARD,
+		CardDungeonState.RUN_STATE_REST,
+		CardDungeonState.RUN_STATE_SHOP,
+		CardDungeonState.RUN_STATE_COMPLETE,
+	]
 
 
 func _build_run_action_buttons() -> void:
@@ -774,8 +797,7 @@ func _build_run_action_buttons() -> void:
 
 
 func _add_run_action_button(label: String, callback: Callable, disabled: bool = false) -> void:
-	var button := Button.new()
-	button.custom_minimum_size = Vector2(118.0, 54.0)
+	var button := ACTION_BUTTON_SCENE.instantiate() as Button
 	button.text = label
 	button.disabled = disabled
 	button.pressed.connect(callback)
@@ -858,6 +880,7 @@ func _on_run_complete_pressed() -> void:
 
 func _after_run_action() -> void:
 	_selected_hand_index = -1
+	_hovered_hand_index = -1
 	_selected_start_cell = _card_state.get_leader_cell()
 	_place_character(_card_state.get_leader_cell())
 	_sync_unit_tokens()
@@ -866,18 +889,171 @@ func _after_run_action() -> void:
 	_refresh_card_ui()
 
 
+func _on_card_hovered(hand_index: int) -> void:
+	if hand_index < 0 or hand_index >= _card_state.deck.hand.size():
+		return
+	_hovered_hand_index = hand_index
+	_update_hand_layout_state(_is_run_action_locked())
+
+
+func _on_card_unhovered(hand_index: int) -> void:
+	if _hovered_hand_index != hand_index:
+		return
+	_hovered_hand_index = -1
+	_update_hand_layout_state(_is_run_action_locked())
+
+
 func _on_card_button_pressed(hand_index: int) -> void:
-	if not _game_started or hand_index < 0 or hand_index >= _card_state.deck.hand.size():
+	pass
+
+
+func _on_card_drag_started(hand_index: int) -> void:
+	if not _game_started or hand_index < 0 or hand_index >= _card_state.deck.hand.size() or _is_run_action_locked():
+		_cancel_card_drag()
+		return
+	_card_drag_active = true
+	_drag_hand_index = hand_index
+	_selected_hand_index = hand_index
+	_hovered_hand_index = -1
+	_update_drag_preview_cell()
+	_update_card_drag_help()
+	_update_hand_layout_state(true)
+
+
+func _on_card_drag_moved(hand_index: int) -> void:
+	if not _card_drag_active or hand_index != _drag_hand_index:
+		return
+	_update_drag_preview_cell()
+	_update_card_drag_help()
+
+
+func _on_card_drag_released(hand_index: int) -> void:
+	if not _card_drag_active or hand_index != _drag_hand_index:
+		_cancel_card_drag()
 		return
 
 	var card := _card_state.deck.hand[hand_index]
+	var target_cell := _drag_preview_cell
 	if String(card.get("target_mode", "")) == DungeonCardDatabase.TARGET_SELF:
-		_card_state.use_card(hand_index, _card_state.party_cell)
+		target_cell = _card_state.party_cell
+
+	if target_cell != INVALID_CELL and _card_state.is_valid_target(card, target_cell):
+		_play_dragged_card(hand_index, target_cell)
+	else:
+		_update_status("Card cancelled: release on a valid highlighted target to use it.")
+		_cancel_card_drag()
+
+
+func _on_card_drag_cancelled(hand_index: int) -> void:
+	if hand_index == _drag_hand_index:
+		_clear_drag_preview()
+		_reset_card_drag_state()
+		_update_status("Card use cancelled.")
+		_restore_card_help_text()
+		_update_hand_layout_state(_is_run_action_locked())
+
+
+func _play_dragged_card(hand_index: int, target_cell: Vector2i) -> void:
+	_clear_drag_preview()
+	var did_play := _card_state.use_card(hand_index, target_cell)
+	if did_play:
 		_tutorial.advance_on_event("card_played")
 		_selected_hand_index = -1
+		_hovered_hand_index = -1
+		_selected_start_cell = _card_state.get_leader_cell()
+		_place_character(_card_state.get_leader_cell())
+		_sync_unit_tokens()
+		_refresh_revealed_tiles()
 	else:
-		_selected_hand_index = hand_index
+		_update_status("Card cancelled: target condition was not met.")
+	_reset_card_drag_state()
+	_update_status(_card_state.get_summary_text())
 	_refresh_card_ui()
+
+
+func _cancel_card_drag() -> void:
+	var cancelled_hand_index := _drag_hand_index
+	_clear_drag_preview()
+	_reset_card_drag_state()
+	if _hand_container != null and cancelled_hand_index >= 0:
+		var card_layer := _hand_container.get_node_or_null("%CardLayer") as Control
+		if card_layer != null:
+			for card_node in card_layer.get_children():
+				if card_node != null and card_node.has_method("cancel_drag"):
+					card_node.call("cancel_drag")
+	_update_status("Card use cancelled.")
+	_restore_card_help_text()
+	_update_hand_layout_state(_is_run_action_locked())
+
+
+func _reset_card_drag_state() -> void:
+	_card_drag_active = false
+	_drag_hand_index = -1
+	_drag_preview_cell = INVALID_CELL
+	_selected_hand_index = -1
+
+
+func _update_drag_preview_cell() -> void:
+	if not _card_drag_active:
+		return
+	var next_cell := _get_mouse_grid_cell()
+	if next_cell == _drag_preview_cell:
+		return
+	_set_tile_focused(_drag_preview_cell, false)
+	_drag_preview_cell = next_cell
+	_set_tile_focused(_drag_preview_cell, true)
+
+
+func _clear_drag_preview() -> void:
+	_set_tile_focused(_drag_preview_cell, false)
+	_drag_preview_cell = INVALID_CELL
+
+
+func _is_drag_preview_valid(cell: Vector2i) -> bool:
+	if not _card_drag_active or _drag_hand_index < 0 or _drag_hand_index >= _card_state.deck.hand.size():
+		return false
+	if cell == INVALID_CELL:
+		return false
+	var card := _card_state.deck.hand[_drag_hand_index]
+	if String(card.get("target_mode", "")) == DungeonCardDatabase.TARGET_SELF:
+		return true
+	return _card_state.is_valid_target(card, cell)
+
+
+func _update_card_drag_help() -> void:
+	if _card_help_label == null or _drag_hand_index < 0 or _drag_hand_index >= _card_state.deck.hand.size():
+		return
+	var card := _card_state.deck.hand[_drag_hand_index]
+	var target_mode := String(card.get("target_mode", ""))
+	var target_text := _get_target_mode_label(target_mode)
+	var valid_text := "valid" if _is_drag_preview_valid(_drag_preview_cell) else "invalid"
+	_card_help_label.text = "%s dragging | target: %s | %s\nRelease to use. Right-click or ESC to cancel." % [
+		String(card.get("name", "Card")),
+		target_text,
+		valid_text,
+	]
+
+
+func _restore_card_help_text() -> void:
+	if _card_help_label == null:
+		return
+	_card_help_label.text = _card_state.get_run_action_text() if _is_run_action_locked() else "Drag a card onto a highlighted dungeon target. Right-click or ESC cancels before release."
+
+
+func _get_target_mode_label(target_mode: String) -> String:
+	match target_mode:
+		DungeonCardDatabase.TARGET_SELF:
+			return "self"
+		DungeonCardDatabase.TARGET_MOVE_CELL:
+			return "move tile"
+		DungeonCardDatabase.TARGET_SEARCH_CELL:
+			return "search tile"
+		DungeonCardDatabase.TARGET_ENEMY:
+			return "enemy"
+		DungeonCardDatabase.TARGET_ALLY:
+			return "ally"
+		_:
+			return "target"
 
 
 func _use_selected_card_on_cell(cell: Vector2i) -> void:
@@ -892,6 +1068,7 @@ func _use_selected_card_on_cell(cell: Vector2i) -> void:
 	if did_play:
 		_tutorial.advance_on_event("card_played")
 		_selected_hand_index = -1
+		_hovered_hand_index = -1
 		_selected_start_cell = _card_state.get_leader_cell()
 		_place_character(_card_state.get_leader_cell())
 		_sync_unit_tokens()

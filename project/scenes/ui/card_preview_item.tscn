@@ -1,0 +1,16 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/card_preview_item.gd" id="1_preview"]
+[ext_resource type="PackedScene" path="res://scenes/ui/dungeon_hand_card.tscn" id="2_hand_card"]
+
+[node name="CardPreviewItem" type="Control"]
+custom_minimum_size = Vector2(256, 384)
+layout_mode = 2
+script = ExtResource("1_preview")
+
+[node name="PreviewCard" parent="." instance=ExtResource("2_hand_card")]
+unique_name_in_owner = true
+layout_mode = 1
+offset_right = 1024.0
+offset_bottom = 1536.0
+scale = Vector2(0.25, 0.25)

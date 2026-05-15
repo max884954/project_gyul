@@ -19,6 +19,41 @@ const TARGET_SELF := "self"
 const TARGET_ENEMY := "enemy"
 const TARGET_ALLY := "ally"
 
+const CARD_ART_PATHS := {
+	"warrior_move": "res://assets/art/ui/cards/content_backgrounds/warrior_move_bg.png",
+	"warrior_guarded_step": "res://assets/art/ui/cards/content_backgrounds/warrior_guarded_step_bg.png",
+	"warrior_hold_line": "res://assets/art/ui/cards/content_backgrounds/warrior_hold_line_bg.png",
+	"warrior_scout_corridor": "res://assets/art/ui/cards/content_backgrounds/warrior_scout_corridor_bg.png",
+	"mage_blink": "res://assets/art/ui/cards/content_backgrounds/mage_blink_bg.png",
+	"mage_arcane_sight": "res://assets/art/ui/cards/content_backgrounds/mage_arcane_sight_bg.png",
+	"mage_barrier": "res://assets/art/ui/cards/content_backgrounds/mage_barrier_bg.png",
+	"mage_probe": "res://assets/art/ui/cards/content_backgrounds/mage_probe_bg.png",
+	"warrior_strike": "res://assets/art/ui/cards/content_backgrounds/warrior_strike_bg.png",
+	"warrior_guard": "res://assets/art/ui/cards/content_backgrounds/warrior_guard_bg.png",
+	"warrior_taunt": "res://assets/art/ui/cards/content_backgrounds/warrior_taunt_bg.png",
+	"warrior_scout": "res://assets/art/ui/cards/content_backgrounds/warrior_scout_bg.png",
+	"mage_fireball": "res://assets/art/ui/cards/content_backgrounds/mage_fireball_bg.png",
+	"mage_frost_arrow": "res://assets/art/ui/cards/content_backgrounds/mage_frost_arrow_bg.png",
+	"mage_move": "res://assets/art/ui/cards/content_backgrounds/mage_move_bg.png",
+	"rogue_sneak_attack": "res://assets/art/ui/cards/content_backgrounds/rogue_sneak_attack_bg.png",
+	"rogue_smoke": "res://assets/art/ui/cards/content_backgrounds/rogue_smoke_bg.png",
+	"rogue_search": "res://assets/art/ui/cards/content_backgrounds/rogue_search_bg.png",
+	"rogue_move": "res://assets/art/ui/cards/content_backgrounds/rogue_move_bg.png",
+	"cleric_heal": "res://assets/art/ui/cards/content_backgrounds/cleric_heal_bg.png",
+	"cleric_prayer": "res://assets/art/ui/cards/content_backgrounds/cleric_prayer_bg.png",
+	"cleric_cleanse": "res://assets/art/ui/cards/content_backgrounds/cleric_cleanse_bg.png",
+	"cleric_holy_burst": "res://assets/art/ui/cards/content_backgrounds/cleric_holy_burst_bg.png",
+	"cleric_move": "res://assets/art/ui/cards/content_backgrounds/cleric_move_bg.png",
+	"warrior_cleave": "res://assets/art/ui/cards/content_backgrounds/warrior_cleave_bg.png",
+	"warrior_cover_advance": "res://assets/art/ui/cards/content_backgrounds/warrior_cover_advance_bg.png",
+	"mage_chain_lightning": "res://assets/art/ui/cards/content_backgrounds/mage_chain_lightning_bg.png",
+	"mage_deep_scan": "res://assets/art/ui/cards/content_backgrounds/mage_deep_scan_bg.png",
+	"rogue_shadow_step": "res://assets/art/ui/cards/content_backgrounds/rogue_shadow_step_bg.png",
+	"rogue_mark_weakness": "res://assets/art/ui/cards/content_backgrounds/rogue_mark_weakness_bg.png",
+	"cleric_group_heal": "res://assets/art/ui/cards/content_backgrounds/cleric_group_heal_bg.png",
+	"cleric_sanctuary": "res://assets/art/ui/cards/content_backgrounds/cleric_sanctuary_bg.png",
+}
+
 const PHASE0_CARDS := [
 	{
 		"id": "warrior_move",
@@ -163,6 +198,24 @@ static func build_reward_pool() -> Array[Dictionary]:
 	return _expand_specs(REWARD_CARDS)
 
 
+static func build_all_card_specs() -> Array[Dictionary]:
+	var cards: Array[Dictionary] = []
+	cards.append_array(_tag_specs(PHASE0_CARDS, "Phase 0"))
+	cards.append_array(_tag_specs(PHASE1_CARDS, "Phase 1"))
+	cards.append_array(_tag_specs(REWARD_CARDS, "Reward"))
+	return cards
+
+
+static func _tag_specs(specs: Array, source: String) -> Array[Dictionary]:
+	var cards: Array[Dictionary] = []
+	for spec in specs:
+		var card := (spec as Dictionary).duplicate(true)
+		card["source"] = source
+		_apply_art_path(card)
+		cards.append(card)
+	return cards
+
+
 static func _expand_specs(specs: Array) -> Array[Dictionary]:
 	var deck: Array[Dictionary] = []
 	for spec in specs:
@@ -170,8 +223,16 @@ static func _expand_specs(specs: Array) -> Array[Dictionary]:
 		for copy_index in range(count):
 			var card := (spec as Dictionary).duplicate(true)
 			card["instance_id"] = "%s_%02d" % [String(card["id"]), copy_index + 1]
+			_apply_art_path(card)
 			deck.append(card)
 	return deck
+
+
+static func _apply_art_path(card: Dictionary) -> void:
+	var card_id := String(card.get("id", ""))
+	var art_path := String(CARD_ART_PATHS.get(card_id, ""))
+	if not art_path.is_empty():
+		card["art_path"] = art_path
 
 
 static func get_job_label(job: String) -> String:
