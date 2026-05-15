@@ -26,7 +26,6 @@ const UNIT_ROOT_NAME := "EncounterUnits"
 const FLOOR_TEXTURE_PATH := "res://assets/art/tilesets/checker_floor.png"
 const CHARACTER_TEXTURE_PATH := "res://assets/art/characters/test_side_character_imagegen_trimmed.png"
 
-const CAMERA_TARGET := Vector3.ZERO
 const CAMERA_DISTANCE := 14.0
 const CAMERA_FIXED_PITCH := deg_to_rad(30.0)
 const CAMERA_VIEW_YAWS := [
@@ -40,6 +39,7 @@ const CAMERA_VIEW_LEFT := 1
 const CAMERA_VIEW_UP := 2
 const CAMERA_VIEW_RIGHT := 3
 const CAMERA_TURN_SPEED := 7.0
+const CAMERA_PAN_STEP := TILE_STEP
 const CAMERA_ZOOM_DRAG_SPEED := 0.025
 const CAMERA_ZOOM_WHEEL_STEP := 0.55
 const CAMERA_MIN_SIZE := 5.0
@@ -55,6 +55,7 @@ const CHARACTER_FACING_YAW := deg_to_rad(90.0)
 
 var _rng := RandomNumberGenerator.new()
 var _camera: Camera3D
+var _camera_target := Vector3.ZERO
 var _camera_view_index := 0
 var _camera_current_yaw := CAMERA_VIEW_YAWS[0]
 var _camera_target_yaw := CAMERA_VIEW_YAWS[0]
@@ -177,13 +178,13 @@ func _handle_key(event: InputEventKey) -> void:
 	elif event.keycode == KEY_Q:
 		_rotate_camera_view(1)
 	elif event.keycode == KEY_W:
-		_set_camera_view(CAMERA_VIEW_UP)
+		_pan_camera(Vector2.UP)
 	elif event.keycode == KEY_A:
-		_set_camera_view(CAMERA_VIEW_LEFT)
+		_pan_camera(Vector2.LEFT)
 	elif event.keycode == KEY_S:
-		_set_camera_view(CAMERA_VIEW_DOWN)
+		_pan_camera(Vector2.DOWN)
 	elif event.keycode == KEY_D:
-		_set_camera_view(CAMERA_VIEW_RIGHT)
+		_pan_camera(Vector2.RIGHT)
 	elif event.keycode == KEY_ESCAPE:
 		if _card_drag_active or _selected_hand_index >= 0:
 			_cancel_card_drag()
@@ -196,6 +197,14 @@ func _rotate_camera_view(direction: int) -> void:
 func _set_camera_view(view_index: int) -> void:
 	_camera_view_index = clampi(view_index, 0, CAMERA_VIEW_YAWS.size() - 1)
 	_camera_target_yaw = CAMERA_VIEW_YAWS[_camera_view_index]
+
+
+func _pan_camera(screen_direction: Vector2) -> void:
+	var forward := Vector3(-sin(_camera_current_yaw), 0.0, -cos(_camera_current_yaw)).normalized()
+	var right := Vector3(cos(_camera_current_yaw), 0.0, -sin(_camera_current_yaw)).normalized()
+	_camera_target += (right * screen_direction.x - forward * screen_direction.y) * CAMERA_PAN_STEP
+	_apply_camera_transform()
+	_update_hovered_tile()
 
 
 func _update_camera_motion(delta: float) -> void:
@@ -214,12 +223,12 @@ func _apply_camera_transform() -> void:
 		return
 
 	var horizontal_distance := cos(CAMERA_FIXED_PITCH) * CAMERA_DISTANCE
-	_camera.position = CAMERA_TARGET + Vector3(
+	_camera.position = _camera_target + Vector3(
 		sin(_camera_current_yaw) * horizontal_distance,
 		sin(CAMERA_FIXED_PITCH) * CAMERA_DISTANCE,
 		cos(_camera_current_yaw) * horizontal_distance
 	)
-	_camera.look_at(CAMERA_TARGET, Vector3.UP)
+	_camera.look_at(_camera_target, Vector3.UP)
 
 
 func _zoom_camera(amount: float) -> void:

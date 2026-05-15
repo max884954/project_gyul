@@ -13,6 +13,12 @@ signal card_drag_cancelled(hand_index: int)
 const DungeonCardDatabase := preload("res://scripts/cards/card_database.gd")
 const CARD_CANVAS_SIZE := Vector2(1024.0, 1536.0)
 const DRAG_SCALE_MULTIPLIER := 1.22
+const DARK_TITLE_COLOR := Color(0.22, 0.15, 0.07, 1.0)
+const DARK_TYPE_COLOR := Color(0.34, 0.22, 0.08, 1.0)
+const DARK_DESCRIPTION_COLOR := Color(0.18, 0.12, 0.07, 1.0)
+const LIGHT_TITLE_COLOR := Color(1.0, 0.95, 0.82, 1.0)
+const LIGHT_TYPE_COLOR := Color(1.0, 0.9, 0.58, 1.0)
+const LIGHT_DESCRIPTION_COLOR := Color(1.0, 0.96, 0.86, 1.0)
 
 @export_group("Editor Preview")
 @export_enum("warrior", "mage", "rogue", "cleric") var preview_job := DungeonCardDatabase.JOB_WARRIOR:
@@ -132,6 +138,7 @@ const DRAG_SCALE_MULTIPLIER := 1.22
 @onready var _border: TextureRect = %CardBorder
 @onready var _title_label: Label = %TitleLabel
 @onready var _type_label: Label = %TypeLabel
+@onready var _type_detail_label: Label = %TypeLabel2
 @onready var _description_label: Label = %DescriptionLabel
 @onready var _selected_frame: Panel = %SelectedFrame
 @onready var _disabled_overlay: ColorRect = %DisabledOverlay
@@ -213,6 +220,7 @@ func _apply_setup() -> void:
 	var job := String(_pending_card.get("job", preview_job))
 	var art_path := String(_pending_card.get("art_path", _pending_card.get("image_path", "")))
 	_apply_job_skin(job)
+	_apply_text_colors(job)
 	_apply_card_background_path(art_path)
 	_illustration.texture = null
 	_title_label.text = String(_pending_card.get("name", "카드"))
@@ -233,6 +241,7 @@ func _apply_editor_preview() -> void:
 	if not is_node_ready():
 		return
 	_apply_job_skin(preview_job)
+	_apply_text_colors(preview_job)
 	_title_label.text = preview_title_text
 	_type_label.text = preview_type_text
 	_description_label.text = preview_description_text
@@ -247,6 +256,14 @@ func _apply_job_skin(job: String) -> void:
 	_title_area.texture = skin["title"] as Texture2D
 	_type_area.texture = skin["type"] as Texture2D
 	_text_area.texture = skin["text"] as Texture2D
+
+
+func _apply_text_colors(job: String) -> void:
+	var uses_dark_text := job == DungeonCardDatabase.JOB_CLERIC
+	_title_label.add_theme_color_override("font_color", DARK_TITLE_COLOR if uses_dark_text else LIGHT_TITLE_COLOR)
+	_type_label.add_theme_color_override("font_color", DARK_TYPE_COLOR if uses_dark_text else LIGHT_TYPE_COLOR)
+	_type_detail_label.add_theme_color_override("font_color", DARK_TYPE_COLOR if uses_dark_text else LIGHT_TYPE_COLOR)
+	_description_label.add_theme_color_override("font_color", DARK_DESCRIPTION_COLOR if uses_dark_text else LIGHT_DESCRIPTION_COLOR)
 
 
 func _apply_background_texture(texture: Texture2D) -> void:

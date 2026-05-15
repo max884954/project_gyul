@@ -10,7 +10,7 @@ func _initialize() -> void:
 
 
 func _run() -> void:
-	await _test_wasd_camera_view_selection()
+	await _test_wasd_camera_ground_pan()
 
 	if _failures.is_empty():
 		print("Camera view controls smoke test passed.")
@@ -21,7 +21,7 @@ func _run() -> void:
 		quit(1)
 
 
-func _test_wasd_camera_view_selection() -> void:
+func _test_wasd_camera_ground_pan() -> void:
 	var scene := load(DUNGEON_SCENE) as PackedScene
 	_expect(scene != null, "Dungeon scene should load for camera control test.")
 	if scene == null:
@@ -31,18 +31,36 @@ func _test_wasd_camera_view_selection() -> void:
 	root.add_child(instance)
 	await process_frame
 
+	var initial_view := int(instance.get("_camera_view_index"))
+	var initial_target := instance.get("_camera_target") as Vector3
 	_send_key(instance, KEY_W)
-	_expect(int(instance.get("_camera_view_index")) == 2, "W should select the upper camera view.")
+	var target_after_w := instance.get("_camera_target") as Vector3
+	_expect(int(instance.get("_camera_view_index")) == initial_view, "W should pan without changing the camera view.")
+	_expect(not target_after_w.is_equal_approx(initial_target), "W should move the camera target on the ground plane.")
+	_expect(is_equal_approx(target_after_w.y, initial_target.y), "W should keep camera panning parallel to the ground.")
+
 	_send_key(instance, KEY_A)
-	_expect(int(instance.get("_camera_view_index")) == 1, "A should select the left camera view.")
+	var target_after_a := instance.get("_camera_target") as Vector3
+	_expect(int(instance.get("_camera_view_index")) == initial_view, "A should pan without changing the camera view.")
+	_expect(not target_after_a.is_equal_approx(target_after_w), "A should move the camera target on the ground plane.")
+	_expect(is_equal_approx(target_after_a.y, initial_target.y), "A should keep camera panning parallel to the ground.")
+
 	_send_key(instance, KEY_S)
-	_expect(int(instance.get("_camera_view_index")) == 0, "S should select the lower camera view.")
+	var target_after_s := instance.get("_camera_target") as Vector3
+	_expect(int(instance.get("_camera_view_index")) == initial_view, "S should pan without changing the camera view.")
+	_expect(not target_after_s.is_equal_approx(target_after_a), "S should move the camera target on the ground plane.")
+	_expect(is_equal_approx(target_after_s.y, initial_target.y), "S should keep camera panning parallel to the ground.")
+
 	_send_key(instance, KEY_D)
-	_expect(int(instance.get("_camera_view_index")) == 3, "D should select the right camera view.")
+	var target_after_d := instance.get("_camera_target") as Vector3
+	_expect(int(instance.get("_camera_view_index")) == initial_view, "D should pan without changing the camera view.")
+	_expect(not target_after_d.is_equal_approx(target_after_s), "D should move the camera target on the ground plane.")
+	_expect(is_equal_approx(target_after_d.y, initial_target.y), "D should keep camera panning parallel to the ground.")
+
 	_send_key(instance, KEY_Q)
-	_expect(int(instance.get("_camera_view_index")) == 0, "Q should keep rotating counter-clockwise from direct views.")
+	_expect(int(instance.get("_camera_view_index")) == 1, "Q should keep rotating counter-clockwise.")
 	_send_key(instance, KEY_E)
-	_expect(int(instance.get("_camera_view_index")) == 3, "E should keep rotating clockwise from direct views.")
+	_expect(int(instance.get("_camera_view_index")) == initial_view, "E should keep rotating clockwise.")
 
 	root.remove_child(instance)
 	instance.queue_free()
