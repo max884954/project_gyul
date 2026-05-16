@@ -76,7 +76,7 @@ func _test_card_layer_assets() -> void:
 	_expect(type_area != null and type_area.texture != null, "Hand card scene should preload a visible default type-area texture.")
 	_expect(text_area != null and text_area.texture != null, "Hand card scene should preload a visible default text-area texture.")
 	_expect(illustration != null, "Hand card scene should expose a card illustration slot.")
-	_expect(background != null and background.position == illustration.position and background.size == illustration.size, "Card background should occupy the image slot.")
+	_expect(background != null and background.size == Vector2(1024.0, 768.0), "Card background should use the generated content background canvas.")
 	_expect(background != null and background.modulate.a > 0.0 and background.modulate.a < 1.0, "Card background should render with alpha.")
 	_expect(title_label != null and title_area != null and title_label.get_parent() == title_area, "Title label should be a child of the title-area layer.")
 	_expect(type_label != null and type_label.get_parent() != null and type_label.get_parent().name == "CardTypeArea", "Type label should be a child of the type-area layer.")
@@ -139,6 +139,33 @@ func _test_dungeon_hand_uses_fanned_card_scene() -> void:
 	if cards.size() >= 2:
 		_expect(cards[0].rotation != cards[cards.size() - 1].rotation, "Hand cards should be fanned with different rotations.")
 		_expect(cards[0].position.x < cards[cards.size() - 1].position.x, "Hand cards should be laid out horizontally.")
+	if cards.size() >= 1:
+		var first_control := cards[0] as Control
+		var rendered_width := first_control.size.x * first_control.scale.x
+		var expected_width := hand_container.size.x / 6.0
+		var visual_center_y := first_control.position.y + first_control.pivot_offset.y
+		_expect(absf(rendered_width - expected_width) <= 1.0, "In-game hand cards should render at roughly one sixth of the viewport width.")
+		_expect(absf(visual_center_y - hand_container.size.y) <= 24.0, "In-game hand cards should rest with about half their height below the viewport.")
+
+	var top_bar := instance.get_node("CanvasLayer/TopBar") as Control
+	var card_hud := instance.get_node("CanvasLayer/DungeonCardHud") as Control
+	var viewport_size := root.get_viewport().get_visible_rect().size
+	instance.set_process(false)
+	instance.call("_apply_ui_side_layout", -1, viewport_size)
+	await create_timer(0.18).timeout
+	_expect(top_bar.position.x < viewport_size.x * 0.5, "Top bar should move to the left-side free UI area.")
+	_expect(card_hud.position.x < viewport_size.x * 0.5, "Card info HUD should move to the left-side free UI area.")
+	if cards.size() >= 1:
+		var left_center_x := (cards[0] as Control).position.x + (cards[0] as Control).pivot_offset.x
+		_expect(absf(left_center_x - hand_container.size.x * 0.5) <= hand_container.size.x * 0.2, "Hand cards should stay centered while other UI moves left.")
+
+	instance.call("_apply_ui_side_layout", 1, viewport_size)
+	await create_timer(0.18).timeout
+	_expect(top_bar.position.x + top_bar.size.x >= viewport_size.x - 25.0, "Top bar should align to the right-side free UI area.")
+	_expect(card_hud.position.x + card_hud.size.x >= viewport_size.x - 25.0, "Card info HUD should align to the right-side free UI area.")
+	if cards.size() >= 1:
+		var right_center_x := (cards[0] as Control).position.x + (cards[0] as Control).pivot_offset.x
+		_expect(absf(right_center_x - hand_container.size.x * 0.5) <= hand_container.size.x * 0.2, "Hand cards should stay centered while other UI moves right.")
 
 	var first_card := cards[0]
 	var resting_scale: float = first_card.scale.x

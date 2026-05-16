@@ -33,27 +33,27 @@ func _test_wasd_camera_ground_pan() -> void:
 
 	var initial_view := int(instance.get("_camera_view_index"))
 	var initial_target := instance.get("_camera_target") as Vector3
-	_send_key(instance, KEY_W)
+	instance.call("_pan_camera", Vector2.UP, 0.5)
 	var target_after_w := instance.get("_camera_target") as Vector3
-	_expect(int(instance.get("_camera_view_index")) == initial_view, "W should pan without changing the camera view.")
+	_expect(int(instance.get("_camera_view_index")) == initial_view, "Continuous W pan should not change the camera view.")
 	_expect(not target_after_w.is_equal_approx(initial_target), "W should move the camera target on the ground plane.")
 	_expect(is_equal_approx(target_after_w.y, initial_target.y), "W should keep camera panning parallel to the ground.")
 
-	_send_key(instance, KEY_A)
+	instance.call("_pan_camera", Vector2.LEFT, 0.5)
 	var target_after_a := instance.get("_camera_target") as Vector3
-	_expect(int(instance.get("_camera_view_index")) == initial_view, "A should pan without changing the camera view.")
+	_expect(int(instance.get("_camera_view_index")) == initial_view, "Continuous A pan should not change the camera view.")
 	_expect(not target_after_a.is_equal_approx(target_after_w), "A should move the camera target on the ground plane.")
 	_expect(is_equal_approx(target_after_a.y, initial_target.y), "A should keep camera panning parallel to the ground.")
 
-	_send_key(instance, KEY_S)
+	instance.call("_pan_camera", Vector2.DOWN, 0.5)
 	var target_after_s := instance.get("_camera_target") as Vector3
-	_expect(int(instance.get("_camera_view_index")) == initial_view, "S should pan without changing the camera view.")
+	_expect(int(instance.get("_camera_view_index")) == initial_view, "Continuous S pan should not change the camera view.")
 	_expect(not target_after_s.is_equal_approx(target_after_a), "S should move the camera target on the ground plane.")
 	_expect(is_equal_approx(target_after_s.y, initial_target.y), "S should keep camera panning parallel to the ground.")
 
-	_send_key(instance, KEY_D)
+	instance.call("_pan_camera", Vector2.RIGHT, 0.5)
 	var target_after_d := instance.get("_camera_target") as Vector3
-	_expect(int(instance.get("_camera_view_index")) == initial_view, "D should pan without changing the camera view.")
+	_expect(int(instance.get("_camera_view_index")) == initial_view, "Continuous D pan should not change the camera view.")
 	_expect(not target_after_d.is_equal_approx(target_after_s), "D should move the camera target on the ground plane.")
 	_expect(is_equal_approx(target_after_d.y, initial_target.y), "D should keep camera panning parallel to the ground.")
 

@@ -18,9 +18,10 @@ signal card_drag_cancelled(hand_index: int)
 @export var hover_scale := 1.13
 @export var locked_scale := 0.94
 @export var max_card_slots := 10
-@export var fan_width_ratio := 0.84
-@export var slot_width := 126.0
-@export var slot_height := 189.0
+@export_range(0.1, 0.5, 0.01) var card_screen_width_ratio := 1.0 / 6.0
+@export_range(0.0, 0.9, 0.05) var card_hidden_height_ratio := 0.5
+@export_range(0.1, 0.9, 0.01) var card_spacing_width_ratio := 0.42
+@export_range(0.0, 0.2, 0.01) var edge_drop_height_ratio := 0.04
 @export var max_fan_angle_degrees := 8.0
 
 @onready var _slot_root: Control = get_node_or_null(slot_root_path) as Control
@@ -31,10 +32,13 @@ var _selected_hand_index := -1
 var _hovered_hand_index := -1
 var _run_action_locked := false
 var _dragging_hand_index := -1
+var _layout_side := 0
 
 
 func _ready() -> void:
 	resized.connect(_layout_cards)
+	if _card_layer != null:
+		_card_layer.resized.connect(_layout_cards)
 
 
 func set_cards(cards: Array, selected_hand_index: int, hovered_hand_index: int, run_action_locked: bool) -> void:
@@ -70,6 +74,14 @@ func set_layout_state(selected_hand_index: int, hovered_hand_index: int, run_act
 	_layout_cards()
 
 
+func set_layout_side(side: int) -> void:
+	var next_side := clampi(side, -1, 1)
+	if _layout_side == next_side:
+		return
+	_layout_side = next_side
+	_layout_cards()
+
+
 func _clear_cards() -> void:
 	for card_node in _card_nodes:
 		if is_instance_valid(card_node):
@@ -93,15 +105,16 @@ func _layout_cards() -> void:
 		var target_position := pose["position"] as Vector2
 		var target_rotation := float(pose["rotation"])
 		var target_scale := pose["scale"] as Vector2
+		var target_card_height := float(pose["card_height"])
 		card_node.z_index = i
 
 		if i == _selected_hand_index:
-			target_position.y -= selected_raise
+			target_position.y -= maxf(selected_raise, target_card_height * 0.28)
 			target_rotation = 0.0
 			target_scale *= selected_scale
 			card_node.z_index = 200
 		elif i == _hovered_hand_index and not _run_action_locked:
-			target_position.y -= hover_raise
+			target_position.y -= maxf(hover_raise, target_card_height * 0.18)
 			target_rotation = 0.0
 			target_scale *= hover_scale
 			card_node.z_index = 160
@@ -121,26 +134,54 @@ func _get_slots() -> Array[Control]:
 
 
 func _get_dynamic_card_pose(index: int, card_count: int, card_node: Control) -> Dictionary:
-	var available_width := maxf(size.x * fan_width_ratio, slot_width)
+	var layout_size := _get_layout_size()
 	var visible_count := maxi(card_count, 1)
-	var spacing := slot_width if visible_count == 1 else minf(slot_width, available_width / float(visible_count - 1))
+	var target_width := maxf(layout_size.x * card_screen_width_ratio, 1.0)
+	var card_aspect := 1.5
+	if card_node.size.x > 0.0 and card_node.size.y > 0.0:
+		card_aspect = card_node.size.y / card_node.size.x
+	var target_height := target_width * card_aspect
+	var spacing := target_width * card_spacing_width_ratio
+	if visible_count > 1:
+		var max_total_spread := maxf(layout_size.x - target_width * 1.1, spacing)
+		spacing = minf(spacing, max_total_spread / float(visible_count - 1))
 	var total_width := spacing * float(visible_count - 1)
-	var center_x := size.x * 0.5
+	var half_visual_width := total_width * 0.5 + target_width * 0.5
+	var center_x := clampf(_get_side_center_x(layout_size), half_visual_width, layout_size.x - half_visual_width)
 	var normalized := 0.0 if visible_count == 1 else (float(index) / float(visible_count - 1)) * 2.0 - 1.0
+	var center_y := layout_size.y + target_height * (0.5 - card_hidden_height_ratio)
+	center_y += absf(normalized) * target_height * edge_drop_height_ratio
 	var slot_position := Vector2(
 		center_x - total_width * 0.5 + spacing * float(index) - card_node.pivot_offset.x,
-		size.y - slot_height - card_node.pivot_offset.y + absf(normalized) * 18.0
+		center_y - card_node.pivot_offset.y
 	)
 	var slot_scale := Vector2.ONE
 	if card_node.size.x > 0.0 and card_node.size.y > 0.0:
-		var scale_value := minf(slot_width / card_node.size.x, slot_height / card_node.size.y)
+		var scale_value := target_width / card_node.size.x
 		slot_scale = Vector2.ONE * scale_value
 	var angle := deg_to_rad(max_fan_angle_degrees) * normalized
 	return {
 		"position": slot_position,
 		"rotation": angle,
 		"scale": slot_scale,
+		"card_height": target_height,
 	}
+
+
+func _get_side_center_x(layout_size: Vector2) -> float:
+	if _layout_side < 0:
+		return layout_size.x * 0.25
+	if _layout_side > 0:
+		return layout_size.x * 0.75
+	return layout_size.x * 0.5
+
+
+func _get_layout_size() -> Vector2:
+	if _card_layer != null and _card_layer.size.x > 0.0 and _card_layer.size.y > 0.0:
+		return _card_layer.size
+	if size.x > 0.0 and size.y > 0.0:
+		return size
+	return get_viewport_rect().size
 
 
 func _get_slot_card_scale(slot: Control, card_node: Control) -> Vector2:
