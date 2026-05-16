@@ -39,11 +39,17 @@ const CAMERA_VIEW_LEFT := 1
 const CAMERA_VIEW_UP := 2
 const CAMERA_VIEW_RIGHT := 3
 const CAMERA_TURN_SPEED := 7.0
-const CAMERA_PAN_STEP := TILE_STEP
+const CAMERA_PAN_SPEED := TILE_STEP * 6.0
 const CAMERA_ZOOM_DRAG_SPEED := 0.025
 const CAMERA_ZOOM_WHEEL_STEP := 0.55
 const CAMERA_MIN_SIZE := 5.0
 const CAMERA_MAX_SIZE := 18.0
+const UI_SIDE_MARGIN := 24.0
+const UI_TOP_BAR_WIDTH := 400.0
+const UI_TOP_BAR_HEIGHT := 92.0
+const UI_CARD_HUD_WIDTH := 560.0
+const UI_CARD_HUD_HEIGHT := 204.0
+const UI_CARD_HUD_TOP := 128.0
 const CHARACTER_WORLD_HEIGHT := TILE_SIZE * 2.2
 const CHARACTER_FLOOR_OFFSET := 0.01
 const CHARACTER_FACING_YAW := deg_to_rad(90.0)
@@ -52,6 +58,7 @@ const CHARACTER_FACING_YAW := deg_to_rad(90.0)
 @onready var _status_label: Label = %StatusLabel
 @onready var _card_hud: PanelContainer = $CanvasLayer/DungeonCardHud
 @onready var _hand_container: Control = $CanvasLayer/DungeonHandLayer
+@onready var _top_bar: PanelContainer = $CanvasLayer/TopBar
 
 var _rng := RandomNumberGenerator.new()
 var _camera: Camera3D
@@ -72,6 +79,7 @@ var _floor_material: StandardMaterial3D
 var _focus_material: StandardMaterial3D
 var _valid_target_material: StandardMaterial3D
 var _invalid_target_material: StandardMaterial3D
+var _effect_preview_material: StandardMaterial3D
 var _start_material: StandardMaterial3D
 var _revealed_material: StandardMaterial3D
 var _border_material: StandardMaterial3D
@@ -88,6 +96,8 @@ var _hovered_hand_index := -1
 var _card_drag_active := false
 var _drag_hand_index := -1
 var _drag_preview_cell := INVALID_CELL
+var _target_candidate_cells: Dictionary = {}
+var _effect_preview_cells: Dictionary = {}
 var _deck_label: Label
 var _card_help_label: Label
 var _run_action_container: HBoxContainer
@@ -96,6 +106,8 @@ var _load_button: Button
 var _tutorial_button: Button
 var _end_turn_button: Button
 var _log_view: RichTextLabel
+var _ui_layout_side := 0
+var _ui_layout_viewport_size := Vector2.ZERO
 
 
 func _ready() -> void:
@@ -132,7 +144,9 @@ func _setup_camera() -> void:
 
 
 func _process(delta: float) -> void:
+	_update_camera_pan(delta)
 	_update_camera_motion(delta)
+	_update_ui_side_layout()
 	_update_hovered_tile()
 
 
@@ -149,11 +163,13 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 	if _card_drag_active:
 		if event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
 			_cancel_card_drag()
+		elif event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			_confirm_active_card_target(_get_mouse_grid_cell())
 		return
 	if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		var cell := _get_mouse_grid_cell()
 		if _game_started:
-			return
+			_use_selected_card_on_cell(cell)
 		else:
 			_select_start_cell(cell)
 	elif event.button_index == MOUSE_BUTTON_MIDDLE:
@@ -177,14 +193,6 @@ func _handle_key(event: InputEventKey) -> void:
 		_rotate_camera_view(-1)
 	elif event.keycode == KEY_Q:
 		_rotate_camera_view(1)
-	elif event.keycode == KEY_W:
-		_pan_camera(Vector2.UP)
-	elif event.keycode == KEY_A:
-		_pan_camera(Vector2.LEFT)
-	elif event.keycode == KEY_S:
-		_pan_camera(Vector2.DOWN)
-	elif event.keycode == KEY_D:
-		_pan_camera(Vector2.RIGHT)
 	elif event.keycode == KEY_ESCAPE:
 		if _card_drag_active or _selected_hand_index >= 0:
 			_cancel_card_drag()
@@ -199,10 +207,31 @@ func _set_camera_view(view_index: int) -> void:
 	_camera_target_yaw = CAMERA_VIEW_YAWS[_camera_view_index]
 
 
-func _pan_camera(screen_direction: Vector2) -> void:
+func _update_camera_pan(delta: float) -> void:
+	var pan_input := _get_camera_pan_input()
+	if pan_input.is_zero_approx():
+		return
+
+	_pan_camera(pan_input, delta)
+
+
+func _get_camera_pan_input() -> Vector2:
+	var pan_input := Vector2.ZERO
+	if Input.is_key_pressed(KEY_W):
+		pan_input.y -= 1.0
+	if Input.is_key_pressed(KEY_S):
+		pan_input.y += 1.0
+	if Input.is_key_pressed(KEY_A):
+		pan_input.x -= 1.0
+	if Input.is_key_pressed(KEY_D):
+		pan_input.x += 1.0
+	return pan_input.normalized() if pan_input.length_squared() > 1.0 else pan_input
+
+
+func _pan_camera(screen_direction: Vector2, delta: float) -> void:
 	var forward := Vector3(-sin(_camera_current_yaw), 0.0, -cos(_camera_current_yaw)).normalized()
 	var right := Vector3(cos(_camera_current_yaw), 0.0, -sin(_camera_current_yaw)).normalized()
-	_camera_target += (right * screen_direction.x - forward * screen_direction.y) * CAMERA_PAN_STEP
+	_camera_target += (right * screen_direction.x - forward * screen_direction.y) * CAMERA_PAN_SPEED * delta
 	_apply_camera_transform()
 	_update_hovered_tile()
 
@@ -236,7 +265,88 @@ func _zoom_camera(amount: float) -> void:
 		return
 
 	_camera.size = clampf(_camera.size + amount, CAMERA_MIN_SIZE, CAMERA_MAX_SIZE)
+	_update_ui_side_layout(true)
 	_update_hovered_tile()
+
+
+func _update_ui_side_layout(force: bool = false) -> void:
+	var viewport_size := get_viewport().get_visible_rect().size
+	var side := _get_wider_ui_side(viewport_size)
+	if not force and _ui_layout_side == side and _ui_layout_viewport_size.is_equal_approx(viewport_size):
+		return
+
+	_ui_layout_side = side
+	_ui_layout_viewport_size = viewport_size
+	_apply_ui_side_layout(side, viewport_size)
+
+
+func _get_wider_ui_side(viewport_size: Vector2) -> int:
+	var party_screen_position := _get_party_screen_position()
+	if not party_screen_position.is_finite():
+		return 1
+
+	var left_space := party_screen_position.x
+	var right_space := viewport_size.x - party_screen_position.x
+	return 1 if right_space >= left_space else -1
+
+
+func _get_party_screen_position() -> Vector2:
+	if _camera == null:
+		return Vector2(INF, INF)
+
+	var party_cell := _get_party_reference_cell()
+	if party_cell == INVALID_CELL:
+		return Vector2(INF, INF)
+
+	var world_position := _get_tile_position(party_cell) + Vector3.UP * (CHARACTER_WORLD_HEIGHT * 0.5)
+	return _camera.unproject_position(world_position)
+
+
+func _get_party_reference_cell() -> Vector2i:
+	if _game_started:
+		return _card_state.get_leader_cell()
+	return _selected_start_cell
+
+
+func _apply_ui_side_layout(side: int, viewport_size: Vector2 = Vector2.ZERO) -> void:
+	if viewport_size == Vector2.ZERO:
+		viewport_size = get_viewport().get_visible_rect().size
+
+	var side_width := maxf(viewport_size.x * 0.5 - UI_SIDE_MARGIN * 2.0, 180.0)
+	var hud_width := minf(UI_CARD_HUD_WIDTH, side_width)
+	var top_bar_width := minf(UI_TOP_BAR_WIDTH, hud_width)
+	var left_x := UI_SIDE_MARGIN
+	var hud_x := left_x if side < 0 else viewport_size.x - hud_width - UI_SIDE_MARGIN
+	var top_bar_x := left_x if side < 0 else viewport_size.x - top_bar_width - UI_SIDE_MARGIN
+
+	var align_right := side > 0
+	_place_canvas_panel(_top_bar, Vector2(top_bar_x, UI_SIDE_MARGIN), Vector2(top_bar_width, UI_TOP_BAR_HEIGHT), align_right, viewport_size.x)
+	_place_canvas_panel(_card_hud, Vector2(hud_x, UI_CARD_HUD_TOP), Vector2(hud_width, UI_CARD_HUD_HEIGHT), align_right, viewport_size.x)
+
+	if _hand_container != null and _hand_container.has_method("set_layout_side"):
+		_hand_container.call("set_layout_side", 0)
+
+
+func _place_canvas_panel(
+	panel: Control,
+	top_left: Vector2,
+	panel_size: Vector2,
+	align_right: bool,
+	viewport_width: float
+) -> void:
+	if panel == null:
+		return
+
+	panel.anchor_left = 1.0 if align_right else 0.0
+	panel.anchor_top = 0.0
+	panel.anchor_right = 1.0 if align_right else 0.0
+	panel.anchor_bottom = 0.0
+	panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN if align_right else Control.GROW_DIRECTION_END
+	var anchor_offset := viewport_width if align_right else 0.0
+	panel.offset_left = top_left.x - anchor_offset
+	panel.offset_top = top_left.y
+	panel.offset_right = top_left.x + panel_size.x - anchor_offset
+	panel.offset_bottom = top_left.y + panel_size.y
 
 
 func _generate_dungeon() -> void:
@@ -510,6 +620,19 @@ func _get_invalid_target_material() -> StandardMaterial3D:
 	return _invalid_target_material
 
 
+func _get_effect_preview_material() -> StandardMaterial3D:
+	if _effect_preview_material != null:
+		return _effect_preview_material
+
+	_effect_preview_material = StandardMaterial3D.new()
+	_effect_preview_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_effect_preview_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_effect_preview_material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	_effect_preview_material.albedo_color = Color(1.0, 0.64, 0.16, 1.0)
+	_effect_preview_material.albedo_texture = _load_floor_texture()
+	return _effect_preview_material
+
+
 func _get_start_material() -> StandardMaterial3D:
 	if _start_material != null:
 		return _start_material
@@ -661,8 +784,14 @@ func _set_tile_focused(cell: Vector2i, focused: bool) -> void:
 	if tile == null:
 		return
 
-	if focused and _card_drag_active and cell == _drag_preview_cell:
-		tile.material_override = _get_valid_target_material() if _is_drag_preview_valid(cell) else _get_invalid_target_material()
+	if _effect_preview_cells.has(cell):
+		tile.material_override = _get_effect_preview_material()
+		tile.position = _get_tile_position(cell) + Vector3.UP * 0.09
+	elif _card_drag_active and _target_candidate_cells.has(cell):
+		tile.material_override = _get_valid_target_material()
+		tile.position = _get_tile_position(cell) + Vector3.UP * (0.08 if cell == _drag_preview_cell else 0.06)
+	elif focused and _card_drag_active and cell == _drag_preview_cell:
+		tile.material_override = _get_invalid_target_material()
 		tile.position = _get_tile_position(cell) + Vector3.UP * 0.08
 	elif cell == _selected_start_cell:
 		tile.material_override = _get_start_material()
@@ -913,27 +1042,18 @@ func _on_card_unhovered(hand_index: int) -> void:
 
 
 func _on_card_button_pressed(hand_index: int) -> void:
-	pass
+	_activate_card_targeting(hand_index)
 
 
 func _on_card_drag_started(hand_index: int) -> void:
-	if not _game_started or hand_index < 0 or hand_index >= _card_state.deck.hand.size() or _is_run_action_locked():
-		_cancel_card_drag()
-		return
-	_card_drag_active = true
-	_drag_hand_index = hand_index
-	_selected_hand_index = hand_index
-	_hovered_hand_index = -1
-	_update_drag_preview_cell()
-	_update_card_drag_help()
-	_update_hand_layout_state(true)
+	_activate_card_targeting(hand_index)
 
 
 func _on_card_drag_moved(hand_index: int) -> void:
 	if not _card_drag_active or hand_index != _drag_hand_index:
 		return
 	_update_drag_preview_cell()
-	_update_card_drag_help()
+	_update_card_targeting_help()
 
 
 func _on_card_drag_released(hand_index: int) -> void:
@@ -941,29 +1061,53 @@ func _on_card_drag_released(hand_index: int) -> void:
 		_cancel_card_drag()
 		return
 
-	var card := _card_state.deck.hand[hand_index]
-	var target_cell := _drag_preview_cell
-	if String(card.get("target_mode", "")) == DungeonCardDatabase.TARGET_SELF:
-		target_cell = _card_state.party_cell
-
-	if target_cell != INVALID_CELL and _card_state.is_valid_target(card, target_cell):
-		_play_dragged_card(hand_index, target_cell)
-	else:
-		_update_status("Card cancelled: release on a valid highlighted target to use it.")
-		_cancel_card_drag()
+	_update_drag_preview_cell()
+	_update_card_targeting_help()
+	_update_hand_layout_state(true)
+	_update_status("Card armed: click one highlighted grid tile to confirm, or right-click/ESC to cancel.")
 
 
 func _on_card_drag_cancelled(hand_index: int) -> void:
 	if hand_index == _drag_hand_index:
-		_clear_drag_preview()
+		_clear_targeting_preview()
 		_reset_card_drag_state()
 		_update_status("Card use cancelled.")
 		_restore_card_help_text()
 		_update_hand_layout_state(_is_run_action_locked())
 
 
-func _play_dragged_card(hand_index: int, target_cell: Vector2i) -> void:
-	_clear_drag_preview()
+func _activate_card_targeting(hand_index: int) -> void:
+	if not _game_started or hand_index < 0 or hand_index >= _card_state.deck.hand.size() or _is_run_action_locked():
+		_cancel_card_drag()
+		return
+	if _card_drag_active and hand_index == _drag_hand_index:
+		return
+	if _card_drag_active:
+		_clear_targeting_preview()
+	_card_drag_active = true
+	_drag_hand_index = hand_index
+	_selected_hand_index = hand_index
+	_hovered_hand_index = -1
+	_rebuild_target_candidates()
+	_update_drag_preview_cell()
+	_update_card_targeting_help()
+	_update_hand_layout_state(true)
+
+
+func _confirm_active_card_target(target_cell: Vector2i) -> void:
+	if not _card_drag_active or _drag_hand_index < 0 or _drag_hand_index >= _card_state.deck.hand.size():
+		return
+	if not _target_candidate_cells.has(target_cell):
+		_drag_preview_cell = target_cell
+		_update_effect_preview_cells()
+		_update_card_targeting_help()
+		_update_status("Target unavailable: choose one of the highlighted tiles.")
+		return
+	_play_armed_card(_drag_hand_index, target_cell)
+
+
+func _play_armed_card(hand_index: int, target_cell: Vector2i) -> void:
+	_clear_targeting_preview()
 	var did_play := _card_state.use_card(hand_index, target_cell)
 	if did_play:
 		_tutorial.advance_on_event("card_played")
@@ -982,7 +1126,7 @@ func _play_dragged_card(hand_index: int, target_cell: Vector2i) -> void:
 
 func _cancel_card_drag() -> void:
 	var cancelled_hand_index := _drag_hand_index
-	_clear_drag_preview()
+	_clear_targeting_preview()
 	_reset_card_drag_state()
 	if _hand_container != null and cancelled_hand_index >= 0:
 		var card_layer := _hand_container.get_node_or_null("%CardLayer") as Control
@@ -999,6 +1143,8 @@ func _reset_card_drag_state() -> void:
 	_card_drag_active = false
 	_drag_hand_index = -1
 	_drag_preview_cell = INVALID_CELL
+	_target_candidate_cells.clear()
+	_effect_preview_cells.clear()
 	_selected_hand_index = -1
 
 
@@ -1008,14 +1154,98 @@ func _update_drag_preview_cell() -> void:
 	var next_cell := _get_mouse_grid_cell()
 	if next_cell == _drag_preview_cell:
 		return
-	_set_tile_focused(_drag_preview_cell, false)
+	var cells_to_refresh := _get_preview_refresh_cells()
 	_drag_preview_cell = next_cell
-	_set_tile_focused(_drag_preview_cell, true)
+	_update_effect_preview_cells()
+	cells_to_refresh.merge(_get_preview_refresh_cells(), true)
+	_refresh_tiles(cells_to_refresh)
 
 
-func _clear_drag_preview() -> void:
-	_set_tile_focused(_drag_preview_cell, false)
+func _clear_targeting_preview() -> void:
+	var cells_to_refresh := _get_preview_refresh_cells()
+	_target_candidate_cells.clear()
+	_effect_preview_cells.clear()
 	_drag_preview_cell = INVALID_CELL
+	_refresh_tiles(cells_to_refresh)
+
+
+func _rebuild_target_candidates() -> void:
+	var cells_to_refresh := _get_preview_refresh_cells()
+	_target_candidate_cells.clear()
+	_effect_preview_cells.clear()
+	if _drag_hand_index < 0 or _drag_hand_index >= _card_state.deck.hand.size():
+		_refresh_tiles(cells_to_refresh)
+		return
+
+	var card := _card_state.deck.hand[_drag_hand_index]
+	if String(card.get("target_mode", "")) == DungeonCardDatabase.TARGET_SELF:
+		if _tiles.has(_card_state.party_cell):
+			_target_candidate_cells[_card_state.party_cell] = true
+	else:
+		for cell in _floor_cells.keys():
+			if _card_state.is_valid_target(card, cell):
+				_target_candidate_cells[cell] = true
+	_update_effect_preview_cells()
+	cells_to_refresh.merge(_get_preview_refresh_cells(), true)
+	_refresh_tiles(cells_to_refresh)
+
+
+func _update_effect_preview_cells() -> void:
+	var previous_cells := _effect_preview_cells.duplicate()
+	_effect_preview_cells.clear()
+	if _drag_hand_index < 0 or _drag_hand_index >= _card_state.deck.hand.size():
+		_refresh_tiles(previous_cells)
+		return
+	if not _target_candidate_cells.has(_drag_preview_cell):
+		_refresh_tiles(previous_cells)
+		return
+
+	var card := _card_state.deck.hand[_drag_hand_index]
+	for cell in _get_card_effect_preview_cells(card, _drag_preview_cell):
+		if _tiles.has(cell):
+			_effect_preview_cells[cell] = true
+	previous_cells.merge(_effect_preview_cells, true)
+	_refresh_tiles(previous_cells)
+
+
+func _get_card_effect_preview_cells(card: Dictionary, target_cell: Vector2i) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	var effect := String(card.get("effect", ""))
+	if effect in ["search", "search_or_weaken"] and not _has_alive_enemy_at(target_cell):
+		var radius := int(card.get("search_radius", 1))
+		for cell in _floor_cells.keys():
+			if _grid_distance(target_cell, cell) <= radius:
+				result.append(cell)
+	else:
+		result.append(target_cell)
+	return result
+
+
+func _get_preview_refresh_cells() -> Dictionary:
+	var result := {}
+	for cell in _target_candidate_cells.keys():
+		result[cell] = true
+	for cell in _effect_preview_cells.keys():
+		result[cell] = true
+	if _drag_preview_cell != INVALID_CELL:
+		result[_drag_preview_cell] = true
+	return result
+
+
+func _refresh_tiles(cells: Dictionary) -> void:
+	for cell in cells.keys():
+		_set_tile_focused(cell, cell == _hovered_cell or cell == _drag_preview_cell)
+
+
+func _has_alive_enemy_at(cell: Vector2i) -> bool:
+	for enemy in _card_state.enemies:
+		if enemy.get("cell", INVALID_CELL) == cell and int(enemy.get("hp", 0)) > 0:
+			return true
+	return false
+
+
+func _grid_distance(a: Vector2i, b: Vector2i) -> int:
+	return absi(a.x - b.x) + absi(a.y - b.y)
 
 
 func _is_drag_preview_valid(cell: Vector2i) -> bool:
@@ -1029,14 +1259,14 @@ func _is_drag_preview_valid(cell: Vector2i) -> bool:
 	return _card_state.is_valid_target(card, cell)
 
 
-func _update_card_drag_help() -> void:
+func _update_card_targeting_help() -> void:
 	if _card_help_label == null or _drag_hand_index < 0 or _drag_hand_index >= _card_state.deck.hand.size():
 		return
 	var card := _card_state.deck.hand[_drag_hand_index]
 	var target_mode := String(card.get("target_mode", ""))
 	var target_text := _get_target_mode_label(target_mode)
-	var valid_text := "valid" if _is_drag_preview_valid(_drag_preview_cell) else "invalid"
-	_card_help_label.text = "%s dragging | target: %s | %s\nRelease to use. Right-click or ESC to cancel." % [
+	var valid_text := "selectable" if _target_candidate_cells.has(_drag_preview_cell) else "not selectable"
+	_card_help_label.text = "%s armed | target: %s | %s\nClick a highlighted tile to confirm. Right-click or ESC cancels." % [
 		String(card.get("name", "Card")),
 		target_text,
 		valid_text,
@@ -1046,7 +1276,7 @@ func _update_card_drag_help() -> void:
 func _restore_card_help_text() -> void:
 	if _card_help_label == null:
 		return
-	_card_help_label.text = _card_state.get_run_action_text() if _is_run_action_locked() else "Drag a card onto a highlighted dungeon target. Right-click or ESC cancels before release."
+	_card_help_label.text = _card_state.get_run_action_text() if _is_run_action_locked() else "Choose a card to arm targeting, then click one highlighted dungeon tile to confirm. Right-click or ESC cancels."
 
 
 func _get_target_mode_label(target_mode: String) -> String:
