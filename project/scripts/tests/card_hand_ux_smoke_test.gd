@@ -46,7 +46,7 @@ func _test_card_layer_assets() -> void:
 		var art_path := String(card.get("art_path", ""))
 		_expect(not art_path.is_empty(), "%s should have a generated content background art path." % card_id)
 		_expect(FileAccess.file_exists(art_path), "%s generated content background should exist: %s" % [card_id, art_path])
-		_expect(_image_matches_size(art_path, Vector2i(720, 400)), "%s generated content background should be 720x400." % card_id)
+		_expect(_image_matches_size(art_path, Vector2i(1024, 768)), "%s generated content background should be 1024x768." % card_id)
 		unique_art_paths[art_path] = true
 	_expect(unique_art_paths.size() == 32, "Generated content backgrounds should cover 32 unique card ids.")
 
