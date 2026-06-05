@@ -1,0 +1,36 @@
+{
+  "group_id": null,
+  "states": [
+    {
+      "character": {
+        "id": "69b24e21-e27a-442c-bcf6-96a3acbf3d83",
+        "name": "A rat-humanoid wearing rugged leather",
+        "prompt": "A rat-humanoid wearing rugged leather armor, holding a rusted dagger in one hand, standing in a low-profile combat stance with a determined expression.",
+        "size": {
+          "width": 96,
+          "height": 96
+        },
+        "template_id": "mannequin",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-06-02T13:16:02.300964+00:00"
+      },
+      "folder": "A_rat-humanoid_wearing_rugged_leather",
+      "frames": {
+        "rotations": {
+          "south": "A_rat-humanoid_wearing_rugged_leather/rotations/south.png",
+          "south-east": "A_rat-humanoid_wearing_rugged_leather/rotations/south-east.png",
+          "east": "A_rat-humanoid_wearing_rugged_leather/rotations/east.png",
+          "north-east": "A_rat-humanoid_wearing_rugged_leather/rotations/north-east.png",
+          "north": "A_rat-humanoid_wearing_rugged_leather/rotations/north.png",
+          "north-west": "A_rat-humanoid_wearing_rugged_leather/rotations/north-west.png",
+          "west": "A_rat-humanoid_wearing_rugged_leather/rotations/west.png",
+          "south-west": "A_rat-humanoid_wearing_rugged_leather/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    }
+  ],
+  "export_version": "3.0",
+  "export_date": "2026-06-05T08:00:35.363748"
+}

@@ -1,0 +1,36 @@
+{
+  "group_id": null,
+  "states": [
+    {
+      "character": {
+        "id": "c0672169-f514-4430-a8ed-a32dfb90ed3d",
+        "name": "A muscular, heavyset bald Black",
+        "prompt": "A muscular, heavyset bald Black man with a thick beard covering his chin, wearing baggy trousers, one eye covered by a black eyepatch, holding a glass mug filled with frothy beer in one hand, standing in a wide, casual stance, low top-down perspective.",
+        "size": {
+          "width": 92,
+          "height": 92
+        },
+        "template_id": "mannequin",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-05-27T11:11:40.856889+00:00"
+      },
+      "folder": "A_muscular_heavyset_bald_Black",
+      "frames": {
+        "rotations": {
+          "south": "A_muscular_heavyset_bald_Black/rotations/south.png",
+          "south-east": "A_muscular_heavyset_bald_Black/rotations/south-east.png",
+          "east": "A_muscular_heavyset_bald_Black/rotations/east.png",
+          "north-east": "A_muscular_heavyset_bald_Black/rotations/north-east.png",
+          "north": "A_muscular_heavyset_bald_Black/rotations/north.png",
+          "north-west": "A_muscular_heavyset_bald_Black/rotations/north-west.png",
+          "west": "A_muscular_heavyset_bald_Black/rotations/west.png",
+          "south-west": "A_muscular_heavyset_bald_Black/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    }
+  ],
+  "export_version": "3.0",
+  "export_date": "2026-06-05T08:00:38.903619"
+}

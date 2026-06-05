@@ -1,0 +1,36 @@
+{
+  "group_id": null,
+  "states": [
+    {
+      "character": {
+        "id": "804c5b8e-be8e-4685-94e4-bb2122d2f7b6",
+        "name": "A rugged man with short",
+        "prompt": "A rugged man with short hair, a prominent mustache, and a scarred eye, wearing thin leather armor, arms crossed in a stoic pose with a longsword sheathed across his back.",
+        "size": {
+          "width": 96,
+          "height": 96
+        },
+        "template_id": "mannequin",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-05-27T10:17:20.840689+00:00"
+      },
+      "folder": "A_rugged_man_with_short",
+      "frames": {
+        "rotations": {
+          "south": "A_rugged_man_with_short/rotations/south.png",
+          "south-east": "A_rugged_man_with_short/rotations/south-east.png",
+          "east": "A_rugged_man_with_short/rotations/east.png",
+          "north-east": "A_rugged_man_with_short/rotations/north-east.png",
+          "north": "A_rugged_man_with_short/rotations/north.png",
+          "north-west": "A_rugged_man_with_short/rotations/north-west.png",
+          "west": "A_rugged_man_with_short/rotations/west.png",
+          "south-west": "A_rugged_man_with_short/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    }
+  ],
+  "export_version": "3.0",
+  "export_date": "2026-06-05T08:00:39.936077"
+}

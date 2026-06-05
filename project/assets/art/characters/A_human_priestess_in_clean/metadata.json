@@ -1,0 +1,36 @@
+{
+  "group_id": null,
+  "states": [
+    {
+      "character": {
+        "id": "a2f56e47-b2bf-487a-852d-1c9d964e9de8",
+        "name": "A human priestess in clean",
+        "prompt": "A human priestess in clean white nun's robes, holding a simple polished wooden staff, standing in a steady, upright pose with a serene expression, low top-down perspective, crisp black outlines.",
+        "size": {
+          "width": 92,
+          "height": 92
+        },
+        "template_id": "mannequin",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-05-24T10:10:54.547452+00:00"
+      },
+      "folder": "A_human_priestess_in_clean",
+      "frames": {
+        "rotations": {
+          "south": "A_human_priestess_in_clean/rotations/south.png",
+          "south-east": "A_human_priestess_in_clean/rotations/south-east.png",
+          "east": "A_human_priestess_in_clean/rotations/east.png",
+          "north-east": "A_human_priestess_in_clean/rotations/north-east.png",
+          "north": "A_human_priestess_in_clean/rotations/north.png",
+          "north-west": "A_human_priestess_in_clean/rotations/north-west.png",
+          "west": "A_human_priestess_in_clean/rotations/west.png",
+          "south-west": "A_human_priestess_in_clean/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    }
+  ],
+  "export_version": "3.0",
+  "export_date": "2026-06-05T08:00:43.904919"
+}
