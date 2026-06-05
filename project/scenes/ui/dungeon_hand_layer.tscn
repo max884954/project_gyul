@@ -1,0 +1,33 @@
+[gd_scene format=3 uid="uid://bvfmoitwt4yda"]
+
+[ext_resource type="Script" uid="uid://j087om1rxo7s" path="res://scripts/ui/dungeon_hand_layout.gd" id="1_hand_layout"]
+
+[node name="DungeonHandLayer" type="Control" unique_id=1807942988]
+unique_name_in_owner = true
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1_hand_layout")
+
+[node name="CardSlots" type="Control" parent="." unique_id=1758171338]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="CardLayer" type="Control" parent="." unique_id=96381879]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2

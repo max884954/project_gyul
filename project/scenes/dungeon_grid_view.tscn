@@ -1,0 +1,59 @@
+[gd_scene load_steps=5 format=3 uid="uid://c5ieypjh7bmpj"]
+
+[ext_resource type="Script" uid="uid://7irud7chmttk" path="res://scripts/dungeon_grid_view.gd" id="1_dungeon_grid"]
+[ext_resource type="PackedScene" path="res://scenes/ui/dungeon_card_hud.tscn" id="2_card_hud"]
+[ext_resource type="PackedScene" path="res://scenes/ui/dungeon_hand_layer.tscn" id="3_hand_layer"]
+
+[sub_resource type="Environment" id="Environment_qv7yl"]
+background_mode = 1
+background_color = Color(0.08, 0.08, 0.08, 1)
+ambient_light_source = 2
+ambient_light_color = Color(1, 1, 1, 1)
+ambient_light_energy = 0.8
+
+[node name="DungeonGridView" type="Node3D" unique_id=574731261]
+script = ExtResource("1_dungeon_grid")
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=1176924545]
+transform = Transform3D(0.70710677, -0.3535534, 0.6123724, 0, 0.8660254, 0.50000006, -0.70710677, -0.3535534, 0.6123724, 8.573215, 7, 8.573215)
+projection = 1
+current = true
+size = 13.0
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=613597345]
+environment = SubResource("Environment_qv7yl")
+
+[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=539228342]
+
+[node name="DungeonCardHud" parent="CanvasLayer" instance=ExtResource("2_card_hud")]
+
+[node name="DungeonHandLayer" parent="CanvasLayer" instance=ExtResource("3_hand_layer")]
+
+[node name="TopBar" type="PanelContainer" parent="CanvasLayer" unique_id=1194903405]
+offset_left = 24.0
+offset_top = 24.0
+offset_right = 424.0
+offset_bottom = 116.0
+
+[node name="MarginContainer" type="MarginContainer" parent="CanvasLayer/TopBar" unique_id=562346454]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 12
+
+[node name="VBoxContainer" type="VBoxContainer" parent="CanvasLayer/TopBar/MarginContainer" unique_id=160270576]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="StatusLabel" type="Label" parent="CanvasLayer/TopBar/MarginContainer/VBoxContainer" unique_id=1335465065]
+unique_name_in_owner = true
+layout_mode = 2
+text = "시작 위치를 선택하세요."
+
+[node name="StartButton" type="Button" parent="CanvasLayer/TopBar/MarginContainer/VBoxContainer" unique_id=1019493690]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(180, 40)
+layout_mode = 2
+disabled = true
+text = "게임 시작"

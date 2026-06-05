@@ -1,0 +1,76 @@
+[gd_scene load_steps=2 format=3 uid="uid://uh1iu1hrg7hq"]
+
+[ext_resource type="Script" uid="uid://bfvhjfrjb7y3y" path="res://scripts/ui/dungeon_card_hud.gd" id="1_hud"]
+
+[node name="DungeonCardHud" type="PanelContainer" unique_id=1790956250]
+unique_name_in_owner = true
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -178.0
+offset_right = -24.0
+offset_bottom = -24.0
+grow_horizontal = 2
+grow_vertical = 0
+script = ExtResource("1_hud")
+
+[node name="MarginContainer" type="MarginContainer" parent="." unique_id=538639987]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 10
+
+[node name="Root" type="VBoxContainer" parent="MarginContainer" unique_id=1131065749]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="DeckLabel" type="Label" parent="MarginContainer/Root" unique_id=1134627150]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="CardHelpLabel" type="Label" parent="MarginContainer/Root" unique_id=1713038031]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 2
+
+[node name="RunActionContainer" type="HBoxContainer" parent="MarginContainer/Root" unique_id=1407988369]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Bottom" type="HBoxContainer" parent="MarginContainer/Root" unique_id=840133467]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+
+[node name="SaveButton" type="Button" parent="MarginContainer/Root/Bottom" unique_id=1769505836]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "저장"
+
+[node name="LoadButton" type="Button" parent="MarginContainer/Root/Bottom" unique_id=61881433]
+unique_name_in_owner = true
+layout_mode = 2
+text = "불러오기"
+
+[node name="TutorialButton" type="Button" parent="MarginContainer/Root/Bottom" unique_id=2024721480]
+unique_name_in_owner = true
+layout_mode = 2
+text = "가이드"
+
+[node name="EndTurnButton" type="Button" parent="MarginContainer/Root/Bottom" unique_id=840872342]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "턴 종료"
+
+[node name="LogView" type="RichTextLabel" parent="MarginContainer/Root/Bottom" unique_id=1528794214]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(520, 76)
+layout_mode = 2
+size_flags_horizontal = 3
+scroll_following = true

@@ -1,0 +1,215 @@
+[gd_scene format=3 uid="uid://dhb0q5afymg2c"]
+
+[ext_resource type="Script" uid="uid://bada1xiee6l74" path="res://scripts/ui/dungeon_hand_card.gd" id="1_hand_card"]
+[ext_resource type="Texture2D" uid="uid://f4mv7wjrwa3x" path="res://assets/art/ui/cards/content_backgrounds/warrior_move_bg.png" id="2_q20vk"]
+[ext_resource type="Texture2D" uid="uid://bl77gc6gwebgd" path="res://assets/art/ui/cards/imagegen_warrior_card_title_area.png" id="2_title_area"]
+[ext_resource type="Texture2D" uid="uid://njq82lwie6c2" path="res://assets/art/ui/cards/imagegen_warrior_card_text_area.png" id="3_text_area"]
+[ext_resource type="Texture2D" uid="uid://d3lcu6in5ul7q" path="res://assets/art/ui/cards/imagegen_warrior_card_type_area.png" id="3_type_area"]
+[ext_resource type="Texture2D" uid="uid://cu7grlvsqreke" path="res://assets/art/ui/cards/imagegen_warrior_card_border_only.png" id="4_border"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_selected"]
+bg_color = Color(1, 1, 1, 0)
+border_width_left = 12
+border_width_top = 12
+border_width_right = 12
+border_width_bottom = 12
+border_color = Color(1, 0.82, 0.24, 1)
+corner_radius_top_left = 28
+corner_radius_top_right = 28
+corner_radius_bottom_right = 28
+corner_radius_bottom_left = 28
+
+[node name="DungeonHandCard" type="Control" unique_id=2114517890]
+custom_minimum_size = Vector2(1024, 1536)
+layout_mode = 3
+anchors_preset = 0
+offset_right = 1024.0
+offset_bottom = 1536.0
+pivot_offset = Vector2(512, 768)
+mouse_filter = 1
+script = ExtResource("1_hand_card")
+
+[node name="Background" type="ColorRect" parent="." unique_id=942490785]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 80.0
+offset_top = 89.0
+offset_right = -90.0
+offset_bottom = -90.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 1)
+
+[node name="CardBackground" type="TextureRect" parent="." unique_id=53290613]
+unique_name_in_owner = true
+modulate = Color(1, 1, 1, 0.72)
+layout_mode = 1
+offset_left = 77.0
+offset_top = 234.99998
+offset_right = 1101.0
+offset_bottom = 1003.0
+scale = Vector2(0.85, 0.85)
+mouse_filter = 2
+texture = ExtResource("2_q20vk")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="CardIllustration" type="TextureRect" parent="." unique_id=1890808441]
+unique_name_in_owner = true
+layout_mode = 1
+offset_left = 152.0
+offset_top = 304.0
+offset_right = 872.0
+offset_bottom = 704.0
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="CardBorder" type="TextureRect" parent="." unique_id=176124295]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -2.0
+offset_bottom = -2.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("4_border")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="CardTitleArea" type="TextureRect" parent="." unique_id=1062793024]
+unique_name_in_owner = true
+texture_filter = 2
+layout_mode = 1
+offset_top = 63.0
+offset_right = 1024.0
+offset_bottom = 288.0
+mouse_filter = 2
+texture = ExtResource("2_title_area")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="TitleLabel" type="Label" parent="CardTitleArea" unique_id=632809199]
+unique_name_in_owner = true
+layout_mode = 1
+offset_left = 86.0
+offset_top = 65.0
+offset_right = 918.0
+offset_bottom = 153.0
+theme_override_colors/font_color = Color(1, 0.95, 0.82, 1)
+theme_override_font_sizes/font_size = 60
+text = "Card Title"
+horizontal_alignment = 1
+vertical_alignment = 1
+clip_text = true
+
+[node name="CardTypeArea" type="TextureRect" parent="." unique_id=1196571490]
+unique_name_in_owner = true
+texture_filter = 2
+layout_mode = 1
+offset_left = -8.0
+offset_top = 675.0
+offset_right = 1016.0
+offset_bottom = 875.0
+mouse_filter = 2
+texture = ExtResource("3_type_area")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="TypeLabel" type="Label" parent="CardTypeArea" unique_id=2078716014]
+unique_name_in_owner = true
+layout_mode = 1
+offset_left = 123.0
+offset_top = 60.0
+offset_right = 485.0
+offset_bottom = 138.0
+theme_override_colors/font_color = Color(1, 0.9, 0.58, 1)
+theme_override_font_sizes/font_size = 48
+text = "Card Type"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="TypeLabel2" type="Label" parent="CardTypeArea" unique_id=759721865]
+unique_name_in_owner = true
+layout_mode = 1
+offset_left = 531.0
+offset_top = 62.0
+offset_right = 893.0
+offset_bottom = 140.0
+theme_override_colors/font_color = Color(1, 0.9, 0.58, 1)
+theme_override_font_sizes/font_size = 48
+text = "Info Blank"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="CardTextArea" type="TextureRect" parent="." unique_id=1090580326]
+unique_name_in_owner = true
+texture_filter = 2
+layout_mode = 1
+offset_left = -4.0
+offset_top = 797.0
+offset_right = 1020.0
+offset_bottom = 1547.0
+mouse_filter = 2
+texture = ExtResource("3_text_area")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="DescriptionLabel" type="Label" parent="CardTextArea" unique_id=1909077945]
+unique_name_in_owner = true
+layout_mode = 1
+offset_left = 112.0
+offset_top = 150.0
+offset_right = 912.0
+offset_bottom = 620.0
+theme_override_colors/font_color = Color(1, 0.96, 0.86, 1)
+theme_override_font_sizes/font_size = 48
+text = "Card description preview."
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+clip_text = true
+
+[node name="SelectedFrame" type="Panel" parent="." unique_id=1285501176]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_selected")
+
+[node name="DisabledOverlay" type="ColorRect" parent="." unique_id=995854202]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 0.42)
+
+[node name="PressArea" type="Button" parent="." unique_id=1365911430]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+focus_mode = 0
+mouse_default_cursor_shape = 2
+flat = true
